@@ -321,7 +321,40 @@ class PKKClient:
                 logger.warning(f"PKK API error: {e}")
                 break
 
+        # Обогащение: для участков с bbox-полигоном (4 угла) дозагружаем
+        # детальную геометрию из /api/features/1/{cn} (параллельно).
+        self._enrich_geometries(parcels)
         return parcels
+
+    def _enrich_geometries(self, parcels: List["CadastralParcel"], max_workers: int = 6) -> None:
+        """Параллельно дозагружает детальные полигоны для участков с bbox-only геометрией."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        targets = [p for p in parcels if not p.polygon or len(p.polygon) <= 5]
+        if not targets:
+            return
+
+        def fetch(p: "CadastralParcel"):
+            try:
+                detail = self.get_parcel_details(p.cn)
+                if not detail:
+                    return p, None
+                feat = detail.get("feature", {})
+                geom = feat.get("geometry")
+                poly = self._extract_polygon(geom) if geom else []
+                # Принимаем только если действительно больше 5 точек (не bbox)
+                if poly and len(poly) > 5:
+                    return p, poly
+            except Exception as e:
+                logger.debug(f"enrich {p.cn}: {e}")
+            return p, None
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(fetch, p) for p in targets]
+            for fut in as_completed(futures):
+                p, poly = fut.result()
+                if poly:
+                    p.polygon = poly
 
     def get_parcel_details(self, cn: str) -> Optional[dict]:
         """Детальная информация по кадастровому номеру."""
@@ -424,40 +457,86 @@ class PKKClient:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
-    """Генерирует реалистичные тестовые кадастровые участки для демо-режима."""
+    """Генерирует реалистичные тестовые кадастровые участки для демо-режима.
+
+    Полигоны — не прямоугольники, а многоугольники с искажёнными границами
+    (как реальные земельные участки в Росреестре).
+    """
+    import random
+
     cx = (bbox["min_lon"] + bbox["max_lon"]) / 2
     cy = (bbox["min_lat"] + bbox["max_lat"]) / 2
     dx = (bbox["max_lon"] - bbox["min_lon"]) / 5
     dy = (bbox["max_lat"] - bbox["min_lat"]) / 4
 
-    def rect(lon0, lat0, w, h):
-        return [(lon0,lat0),(lon0+w,lat0),(lon0+w,lat0+h),(lon0,lat0+h)]
+    def irregular(lon0: float, lat0: float, w: float, h: float, seed: int) -> List[Tuple[float, float]]:
+        """Создаёт неправильный многоугольник, вписанный в bbox (lon0,lat0,w,h).
+        Базовый прямоугольник плюс по 2–4 промежуточные точки на каждую сторону
+        с небольшими случайными отклонениями внутрь/наружу.
+        """
+        rng = random.Random(seed)
+        # Жёсткость отклонения — доля от стороны
+        jx = w * 0.08
+        jy = h * 0.08
+
+        def edge(p1, p2, n):
+            """Промежуточные точки между p1 и p2 со случайным нормальным сдвигом."""
+            pts = []
+            for i in range(1, n + 1):
+                t = i / (n + 1)
+                bx = p1[0] + (p2[0] - p1[0]) * t
+                by = p1[1] + (p2[1] - p1[1]) * t
+                # Нормаль к ребру
+                ex, ey = p2[0] - p1[0], p2[1] - p1[1]
+                length = math.hypot(ex, ey) or 1.0
+                nx, ny = -ey / length, ex / length
+                offset = rng.uniform(-1.0, 1.0)
+                pts.append((bx + nx * jx * offset, by + ny * jy * offset))
+            return pts
+
+        # Углы (со слегка смещёнными позициями)
+        c1 = (lon0 + rng.uniform(-jx*0.5, jx*0.5),     lat0 + rng.uniform(-jy*0.5, jy*0.5))
+        c2 = (lon0 + w + rng.uniform(-jx*0.5, jx*0.5), lat0 + rng.uniform(-jy*0.5, jy*0.5))
+        c3 = (lon0 + w + rng.uniform(-jx*0.5, jx*0.5), lat0 + h + rng.uniform(-jy*0.5, jy*0.5))
+        c4 = (lon0 + rng.uniform(-jx*0.5, jx*0.5),     lat0 + h + rng.uniform(-jy*0.5, jy*0.5))
+
+        ring: List[Tuple[float, float]] = []
+        ring.append(c1)
+        ring.extend(edge(c1, c2, rng.randint(2, 3)))
+        ring.append(c2)
+        ring.extend(edge(c2, c3, rng.randint(2, 4)))
+        ring.append(c3)
+        ring.extend(edge(c3, c4, rng.randint(2, 3)))
+        ring.append(c4)
+        ring.extend(edge(c4, c1, rng.randint(2, 4)))
+        ring.append(c1)  # замыкание
+        return ring
 
     return [
         CadastralParcel(
             cn="77:01:0001023:44", area=14900, category="Земли нас. пунктов",
             owner_type="municipal", owner_name="г. Москва",
-            polygon=rect(bbox["min_lon"], cy, dx*1.5, dy*1.2),
+            polygon=irregular(bbox["min_lon"], cy, dx*1.5, dy*1.2, seed=1),
         ),
         CadastralParcel(
             cn="77:01:0001024:12", area=34000, category="Земли нас. пунктов",
             owner_type="private", owner_name="Иванов А.П.",
-            polygon=rect(bbox["min_lon"]+dx*1.5, cy-dy*0.5, dx*1.2, dy*1.8),
+            polygon=irregular(bbox["min_lon"]+dx*1.5, cy-dy*0.5, dx*1.2, dy*1.8, seed=2),
         ),
         CadastralParcel(
             cn="77:01:0001025:07", area=122000, category="Земли транспорта",
             owner_type="federal", owner_name="РФ (Росавтодор)",
-            polygon=rect(bbox["min_lon"]+dx*2.8, bbox["min_lat"], dx*0.4, dy*4),
+            polygon=irregular(bbox["min_lon"]+dx*2.8, bbox["min_lat"], dx*0.4, dy*4, seed=3),
         ),
         CadastralParcel(
             cn="77:01:0001025:08", area=95000, category="Земли нас. пунктов",
             owner_type="federal", owner_name="РФ (Росимущество)",
-            polygon=rect(bbox["min_lon"]+dx*3.3, cy-dy, dx*1.0, dy*2),
+            polygon=irregular(bbox["min_lon"]+dx*3.3, cy-dy, dx*1.0, dy*2, seed=4),
         ),
         CadastralParcel(
             cn="77:01:0001026:01", area=18000, category="Земли нас. пунктов",
             owner_type="municipal", owner_name="г. Москва",
-            polygon=rect(bbox["min_lon"]+dx*4.4, cy, dx*0.55, dy*1.0),
+            polygon=irregular(bbox["min_lon"]+dx*4.4, cy, dx*0.55, dy*1.0, seed=5),
         ),
     ]
 
