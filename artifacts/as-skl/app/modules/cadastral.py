@@ -459,86 +459,75 @@ class PKKClient:
 def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
     """Генерирует реалистичные тестовые кадастровые участки для демо-режима.
 
-    Полигоны — не прямоугольники, а многоугольники с искажёнными границами
-    (как реальные земельные участки в Росреестре).
+    Сетка 3×2 ячеек + вертикальная дорожная полоса — покрывают весь bbox
+    без пропусков. Углы участков фиксированы на узлах сетки (без jitter),
+    только средние точки рёбер смещаются — так соседние участки стыкуются.
     """
     import random
 
-    cx = (bbox["min_lon"] + bbox["max_lon"]) / 2
-    cy = (bbox["min_lat"] + bbox["max_lat"]) / 2
-    dx = (bbox["max_lon"] - bbox["min_lon"]) / 5
-    dy = (bbox["max_lat"] - bbox["min_lat"]) / 4
+    L = bbox["min_lon"];  R = bbox["max_lon"]
+    B = bbox["min_lat"];  T = bbox["max_lat"]
+    W = R - L;  H = T - B
 
-    def irregular(lon0: float, lat0: float, w: float, h: float, seed: int) -> List[Tuple[float, float]]:
-        """Создаёт неправильный многоугольник, вписанный в bbox (lon0,lat0,w,h).
-        Базовый прямоугольник плюс по 2–4 промежуточные точки на каждую сторону
-        с небольшими случайными отклонениями внутрь/наружу.
+    # Опорные вертикальные разделы (доля от W)
+    x1 = L + W * 0.28   # граница ячеек col-0 / col-1
+    x2 = L + W * 0.53   # левый край дороги
+    x2r = L + W * 0.60  # правый край дороги
+    x3 = L + W * 0.78   # граница ячеек col-2 / col-3 (правая зона)
+    # Горизонтальный раздел
+    my = B + H * 0.52   # граница нижней/верхней строки
+
+    def irregular(corners: List[Tuple[float,float]], seed: int, n_mid: int = 3) -> List[Tuple[float,float]]:
+        """Принимает список углов (без замыкания), добавляет n_mid промежуточных
+        точек на каждое ребро со случайным смещением вдоль нормали.
+        Углы НЕ смещаются — участки стыкуются без зазоров.
         """
         rng = random.Random(seed)
-        # Жёсткость отклонения — доля от стороны
-        jx = w * 0.08
-        jy = h * 0.08
-
-        def edge(p1, p2, n):
-            """Промежуточные точки между p1 и p2 со случайным нормальным сдвигом."""
-            pts = []
-            for i in range(1, n + 1):
-                t = i / (n + 1)
-                bx = p1[0] + (p2[0] - p1[0]) * t
-                by = p1[1] + (p2[1] - p1[1]) * t
-                # Нормаль к ребру
-                ex, ey = p2[0] - p1[0], p2[1] - p1[1]
-                length = math.hypot(ex, ey) or 1.0
-                nx, ny = -ey / length, ex / length
-                offset = rng.uniform(-1.0, 1.0)
-                pts.append((bx + nx * jx * offset, by + ny * jy * offset))
-            return pts
-
-        # Углы (со слегка смещёнными позициями)
-        c1 = (lon0 + rng.uniform(-jx*0.5, jx*0.5),     lat0 + rng.uniform(-jy*0.5, jy*0.5))
-        c2 = (lon0 + w + rng.uniform(-jx*0.5, jx*0.5), lat0 + rng.uniform(-jy*0.5, jy*0.5))
-        c3 = (lon0 + w + rng.uniform(-jx*0.5, jx*0.5), lat0 + h + rng.uniform(-jy*0.5, jy*0.5))
-        c4 = (lon0 + rng.uniform(-jx*0.5, jx*0.5),     lat0 + h + rng.uniform(-jy*0.5, jy*0.5))
-
-        ring: List[Tuple[float, float]] = []
-        ring.append(c1)
-        ring.extend(edge(c1, c2, rng.randint(2, 3)))
-        ring.append(c2)
-        ring.extend(edge(c2, c3, rng.randint(2, 4)))
-        ring.append(c3)
-        ring.extend(edge(c3, c4, rng.randint(2, 3)))
-        ring.append(c4)
-        ring.extend(edge(c4, c1, rng.randint(2, 4)))
-        ring.append(c1)  # замыкание
+        ring: List[Tuple[float,float]] = []
+        n = len(corners)
+        for i in range(n):
+            p1 = corners[i]
+            p2 = corners[(i + 1) % n]
+            ring.append(p1)
+            ex = p2[0] - p1[0];  ey = p2[1] - p1[1]
+            seg_len = math.hypot(ex, ey) or 1.0
+            nx = -ey / seg_len;  ny = ex / seg_len
+            jitter = seg_len * 0.07   # 7% длины ребра
+            for k in range(1, n_mid + 1):
+                t = k / (n_mid + 1)
+                mx_ = p1[0] + ex * t + nx * rng.uniform(-jitter, jitter)
+                my_ = p1[1] + ey * t + ny * rng.uniform(-jitter, jitter)
+                ring.append((mx_, my_))
+        ring.append(corners[0])   # замыкание
         return ring
 
-    return [
-        CadastralParcel(
-            cn="77:01:0001023:44", area=14900, category="Земли нас. пунктов",
-            owner_type="municipal", owner_name="г. Москва",
-            polygon=irregular(bbox["min_lon"], cy, dx*1.5, dy*1.2, seed=1),
-        ),
-        CadastralParcel(
-            cn="77:01:0001024:12", area=34000, category="Земли нас. пунктов",
-            owner_type="private", owner_name="Иванов А.П.",
-            polygon=irregular(bbox["min_lon"]+dx*1.5, cy-dy*0.5, dx*1.2, dy*1.8, seed=2),
-        ),
-        CadastralParcel(
-            cn="77:01:0001025:07", area=122000, category="Земли транспорта",
-            owner_type="federal", owner_name="РФ (Росавтодор)",
-            polygon=irregular(bbox["min_lon"]+dx*2.8, bbox["min_lat"], dx*0.4, dy*4, seed=3),
-        ),
-        CadastralParcel(
-            cn="77:01:0001025:08", area=95000, category="Земли нас. пунктов",
-            owner_type="federal", owner_name="РФ (Росимущество)",
-            polygon=irregular(bbox["min_lon"]+dx*3.3, cy-dy, dx*1.0, dy*2, seed=4),
-        ),
-        CadastralParcel(
-            cn="77:01:0001026:01", area=18000, category="Земли нас. пунктов",
-            owner_type="municipal", owner_name="г. Москва",
-            polygon=irregular(bbox["min_lon"]+dx*4.4, cy, dx*0.55, dy*1.0, seed=5),
-        ),
+    # Сетка: 6 ячеек + дорога
+    # Левый столбец (col-0): x=[L, x1], row-bottom=[B,my], row-top=[my,T]
+    # Средний столбец (col-1): x=[x1, x2], полная высота (one tall cell + road)
+    # Дорога: x=[x2, x2r], вертикальная полоса
+    # Правый столбец (col-2 + col-3): x=[x2r, x3] и [x3, R], row-bottom + top
+
+    cells = [
+        # (corners, seed, категория, тип, площадь, кн, владелец)
+        ([(L, B),(x1,B),(x1,my),(L,my)],    1, "Земли лесного фонда",    "federal",   87000, "46:12:0010301:15", "РФ (Рослесхоз)"),
+        ([(L, my),(x1,my),(x1,T),(L,T)],     2, "Земли с/х назначения",  "private",   54000, "46:12:0010301:22", "Сельхоз-Агро ООО"),
+        ([(x1, B),(x2,B),(x2,T),(x1,T)],     3, "Земли нас. пунктов",    "municipal", 43000, "46:12:0010302:08", "Пристенский р-н"),
+        ([(x2,  B),(x2r,B),(x2r,T),(x2,T)],  4, "Земли транспорта",      "federal",  128000, "46:12:0010303:01", "РФ (Росавтодор)"),
+        ([(x2r, B),(x3,B),(x3,my),(x2r,my)], 5, "Земли нас. пунктов",    "private",   32000, "46:12:0010304:11", "Петров В.С."),
+        ([(x2r,my),(x3,my),(x3,T),(x2r,T)],  6, "Земли с/х назначения",  "municipal", 28000, "46:12:0010304:17", "Пристенский р-н"),
+        ([(x3,  B),(R,B),(R,my),(x3,my)],     7, "Земли нас. пунктов",    "private",   19000, "46:12:0010305:03", "Сидорова Е.В."),
+        ([(x3, my),(R,my),(R,T),(x3,T)],      8, "Земли лесного фонда",   "federal",   61000, "46:12:0010305:09", "РФ (Рослесхоз)"),
     ]
+
+    parcels = []
+    for corners, seed, cat, owner_type, area, cn, owner_name in cells:
+        poly = irregular(corners, seed=seed, n_mid=4)
+        parcels.append(CadastralParcel(
+            cn=cn, area=area, category=cat,
+            owner_type=owner_type, owner_name=owner_name,
+            polygon=poly,
+        ))
+    return parcels
 
 
 # ──────────────────────────────────────────────────────────────────────────────
