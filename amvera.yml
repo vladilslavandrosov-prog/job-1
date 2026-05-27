@@ -1,0 +1,13 @@
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.12"
+
+build:
+  requirementsPath: artifacts/as-skl/requirements.txt
+
+run:
+  scriptName: artifacts/as-skl/run.py
+  persistenceMount: /data
+  containerPort: 80
