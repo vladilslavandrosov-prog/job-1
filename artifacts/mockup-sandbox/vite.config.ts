@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { mockupPreviewPlugin } from "./mockupPreviewPlugin";
+import http from "http";
 
 const rawPort = process.env.PORT;
 
@@ -27,20 +28,66 @@ if (!basePath) {
   );
 }
 
-// Server-side redirect plugin: /__mockup root → Flask app at /
-function rootRedirectPlugin(): import("vite").Plugin {
+// Proxy all non-mockup-sandbox requests to Flask (port 5000).
+// This makes the Vite server transparently serve the Flask app at the root,
+// while keeping /__mockup/preview/* and Vite internals handled by Vite.
+function flaskProxyPlugin(): import("vite").Plugin {
   return {
-    name: "root-redirect",
+    name: "flask-proxy",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url ?? "/";
-        const clean = url.split("?")[0].replace(/\/$/, "") || "/";
-        const isRoot = clean === basePath.replace(/\/$/, "") || clean === "";
-        if (isRoot) {
-          res.writeHead(302, { Location: "/" });
-          res.end();
+
+        // Always let Vite handle its own internal routes
+        if (
+          url.startsWith("/@") ||
+          url.startsWith("/__vite") ||
+          url.startsWith("/node_modules/")
+        ) {
+          next();
           return;
         }
+
+        // Determine Flask path to forward to
+        let flaskPath: string | null = null;
+
+        if (url === basePath || url === basePath + "/") {
+          // Mockup root → Flask root
+          flaskPath = "/";
+        } else if (!url.startsWith(basePath + "/")) {
+          // Any path outside of the basePath subtree → proxy as-is to Flask
+          flaskPath = url;
+        }
+        // Paths under /__mockup/* (assets, preview, src, etc.) → let Vite handle
+
+        if (flaskPath !== null) {
+          const proxyReq = http.request(
+            {
+              hostname: "localhost",
+              port: 5000,
+              path: flaskPath,
+              method: req.method ?? "GET",
+              headers: { ...req.headers, host: "localhost:5000" },
+            },
+            (proxyRes) => {
+              const headers: Record<string, string | string[] | undefined> = {};
+              for (const [k, v] of Object.entries(proxyRes.headers)) {
+                if (v !== undefined) headers[k] = v;
+              }
+              res.writeHead(proxyRes.statusCode ?? 200, headers as never);
+              proxyRes.pipe(res, { end: true });
+            },
+          );
+
+          proxyReq.on("error", () => {
+            res.writeHead(502);
+            res.end("Flask unavailable — is the АС СКЛ workflow running?");
+          });
+
+          req.pipe(proxyReq, { end: true });
+          return;
+        }
+
         next();
       });
     },
@@ -50,7 +97,7 @@ function rootRedirectPlugin(): import("vite").Plugin {
 export default defineConfig({
   base: basePath,
   plugins: [
-    rootRedirectPlugin(),
+    flaskProxyPlugin(),
     mockupPreviewPlugin(),
     react(),
     tailwindcss(),
