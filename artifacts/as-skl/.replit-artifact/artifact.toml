@@ -3,10 +3,16 @@ previewPath = "/"
 title = "АС СКЛ v2.0"
 version = "1.0.0"
 
+[deployment]
+deploymentTarget = "vm"
+
 [[services]]
 localPort = 5000
 name = "АС СКЛ"
 paths = ["/", "/api/v1"]
 
 [services.development]
-run = "python artifacts/as-skl/run.py"
+run = "python run.py"
+
+[services.production]
+run = "python run.py"
