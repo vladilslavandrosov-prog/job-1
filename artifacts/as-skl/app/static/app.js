@@ -136,7 +136,7 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
       poly.on("click", () => onParcelClick && onParcelClick(p));
     });
     layersRef.current.parcels = grp;
-    if (activeLayers.parcels) grp.addTo(map);
+    if (layersRef.current._parcelVisible !== false) grp.addTo(map);
   }, [parcels]);
   useEffect(() => {
     const map = leafRef.current;
@@ -172,7 +172,7 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
       </div>`);
     });
     layersRef.current.intersections = grp;
-    if (activeLayers.intersections) grp.addTo(map);
+    if (layersRef.current._intVisible !== false) grp.addTo(map);
   }, [intersections]);
   const toggle = (name) => {
     const map = leafRef.current;
@@ -182,6 +182,8 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
     const next = !activeLayers[name];
     if (next) layer.addTo(map);
     else map.removeLayer(layer);
+    if (name === "parcels") layersRef.current._parcelVisible = next;
+    if (name === "intersections") layersRef.current._intVisible = next;
     setActiveLayers((p) => __spreadProps(__spreadValues({}, p), { [name]: next }));
   };
   return /* @__PURE__ */ React.createElement("div", { className: "map-wrap" }, /* @__PURE__ */ React.createElement("div", { id: "map", ref: mapRef }), /* @__PURE__ */ React.createElement("div", { className: "map-overlay" }, /* @__PURE__ */ React.createElement(

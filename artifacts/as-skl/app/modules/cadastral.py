@@ -362,33 +362,61 @@ class PKKClient:
         )
 
     def _extract_polygon(self, geom: dict) -> List[Tuple[float,float]]:
-        """Извлекает список точек полигона из GeoJSON."""
+        """Извлекает список точек полигона из GeoJSON или extent-bbox."""
+
+        # PKK иногда отдаёт extent-словарь напрямую (без вложения в geometry).
+        # Определяем его по наличию xmin/ymin/xmax/ymax.
+        if all(k in geom for k in ("xmin", "ymin", "xmax", "ymax")):
+            xmin = geom["xmin"]; ymin = geom["ymin"]
+            xmax = geom["xmax"]; ymax = geom["ymax"]
+            # Защита: если координаты выглядят как Web Mercator (>200), конвертируем
+            if abs(xmin) > 180 or abs(ymin) > 90:
+                xmin, ymin = self._merc_to_wgs(xmin, ymin)
+                xmax, ymax = self._merc_to_wgs(xmax, ymax)
+            return [(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)]
+
         gtype = geom.get("type", "")
         coords = geom.get("coordinates", [])
 
         if gtype == "Polygon" and coords:
-            return [(c[0], c[1]) for c in coords[0]]
+            ring = coords[0]
+            pts = [(c[0], c[1]) for c in ring]
+            # Защита от Web Mercator в координатах полигона
+            if pts and (abs(pts[0][0]) > 180 or abs(pts[0][1]) > 90):
+                pts = [self._merc_to_wgs(x, y) for x, y in pts]
+            return pts
         elif gtype == "MultiPolygon" and coords:
-            # Берём самый большой полигон
             rings = [ring for poly in coords for ring in poly]
             longest = max(rings, key=len) if rings else []
-            return [(c[0], c[1]) for c in longest]
+            pts = [(c[0], c[1]) for c in longest]
+            if pts and (abs(pts[0][0]) > 180 or abs(pts[0][1]) > 90):
+                pts = [self._merc_to_wgs(x, y) for x, y in pts]
+            return pts
         elif gtype == "Point" and len(coords) >= 2:
-            # Иногда PKK отдаёт только centroid
             cx, cy = coords[0], coords[1]
-            r = 0.001  # ~100 м — приблизительный bbox точки
+            if abs(cx) > 180 or abs(cy) > 90:
+                cx, cy = self._merc_to_wgs(cx, cy)
+            r = 0.001  # ~100 м в градусах
             return [(cx-r,cy-r),(cx+r,cy-r),(cx+r,cy+r),(cx-r,cy+r)]
 
-        # Fallback: extent
+        # Fallback: extent вложен внутри geom
         if "extent" in geom:
             e = geom["extent"]
-            return [
-                (e.get("xmin",0), e.get("ymin",0)),
-                (e.get("xmax",0), e.get("ymin",0)),
-                (e.get("xmax",0), e.get("ymax",0)),
-                (e.get("xmin",0), e.get("ymax",0)),
-            ]
+            xmin = e.get("xmin", 0); ymin = e.get("ymin", 0)
+            xmax = e.get("xmax", 0); ymax = e.get("ymax", 0)
+            if abs(xmin) > 180 or abs(ymin) > 90:
+                xmin, ymin = self._merc_to_wgs(xmin, ymin)
+                xmax, ymax = self._merc_to_wgs(xmax, ymax)
+            return [(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)]
+
         return []
+
+    @staticmethod
+    def _merc_to_wgs(x: float, y: float) -> Tuple[float, float]:
+        """Конвертирует Web Mercator (EPSG:3857) → WGS-84 (lon, lat)."""
+        lon = x * 180.0 / 20037508.342789244
+        lat = math.degrees(2.0 * math.atan(math.exp(y * math.pi / 20037508.342789244)) - math.pi / 2)
+        return round(lon, 7), round(lat, 7)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
