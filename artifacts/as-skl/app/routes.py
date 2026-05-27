@@ -19,7 +19,12 @@ _PROJECTS: dict = {}   # in-memory store (→ Redis/Postgres в продакшн
 def index():
     path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
     html = open(path, encoding="utf-8").read()
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    return html, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "X-Frame-Options": "ALLOWALL",
+    }
 
 @main_bp.route("/favicon.ico")
 def favicon(): return "", 204
