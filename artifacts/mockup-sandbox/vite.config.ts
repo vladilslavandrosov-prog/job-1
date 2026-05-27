@@ -27,9 +27,30 @@ if (!basePath) {
   );
 }
 
+// Server-side redirect plugin: /__mockup root → Flask app at /
+function rootRedirectPlugin(): import("vite").Plugin {
+  return {
+    name: "root-redirect",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? "/";
+        const clean = url.split("?")[0].replace(/\/$/, "") || "/";
+        const isRoot = clean === basePath.replace(/\/$/, "") || clean === "";
+        if (isRoot) {
+          res.writeHead(302, { Location: "/" });
+          res.end();
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
+    rootRedirectPlugin(),
     mockupPreviewPlugin(),
     react(),
     tailwindcss(),
