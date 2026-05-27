@@ -1,0 +1,259 @@
+"""
+АС СКЛ v2.0 — полный REST API (PostgreSQL backend)
+"""
+import os, uuid, json, logging
+import psycopg2.extras
+from flask import Blueprint, request, jsonify, send_file
+from .modules.dwg_parser import parse_from_bytes, RoutePoint
+from .modules.cadastral import CadastralAnalyzer, result_to_dict
+from .modules.pdf_generator import PDFGenerator
+from .db import get_db, db_get, db_all, db_run
+
+logger = logging.getLogger(__name__)
+main_bp = Blueprint("main", __name__)
+api_bp  = Blueprint("api",  __name__)
+
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+@main_bp.route("/")
+def index():
+    path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    html = open(path, encoding="utf-8").read()
+    return html, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "X-Frame-Options": "ALLOWALL",
+    }
+
+@main_bp.route("/favicon.ico")
+def favicon(): return "", 204
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+@api_bp.route("/health")
+def health():
+    db_ok = False
+    try:
+        with get_db() as conn:
+            row = db_get(conn, "SELECT 1 AS ok")
+            db_ok = row is not None
+    except Exception:
+        pass
+    return jsonify({
+        "status": "ok", "version": "2.0.0",
+        "service": "АС СКЛ", "db": "postgres" if db_ok else "unavailable"
+    })
+
+
+# ── Upload ────────────────────────────────────────────────────────────────────
+@api_bp.route("/upload", methods=["POST"])
+def upload():
+    route_points, parse_errors, parse_warnings, crs_detected = [], [], [], ""
+    project_name = "Новый проект"
+    meta = {}
+
+    if "file" in request.files:
+        f = request.files["file"]
+        if not f.filename:
+            return jsonify({"error": "Файл не выбран"}), 400
+        ext = f.filename.rsplit(".", 1)[-1].lower()
+        allowed = {"dwg","dxf","pdf","csv","xlsx"}
+        if ext not in allowed:
+            return jsonify({"error": f"Формат .{ext} не поддерживается"}), 400
+        data = f.read()
+        result = parse_from_bytes(data, f.filename)
+        route_points = result.points
+        parse_errors = result.errors
+        parse_warnings = result.warnings
+        crs_detected = result.crs_detected
+        project_name = request.form.get("project", f.filename.rsplit(".",1)[0])
+        meta = result.meta
+        if not result.success or not route_points:
+            return jsonify({"success": False, "errors": parse_errors,
+                            "warnings": parse_warnings}), 422
+
+    elif request.is_json:
+        body = request.get_json(silent=True) or {}
+        raw_points = body.get("points", [])
+        project_name = body.get("project", project_name)
+        if len(raw_points) < 2:
+            return jsonify({"error": "Минимум 2 точки"}), 400
+        from .modules.dwg_parser import detect_crs, _gauss_kruger_to_geo, _haversine
+        xy = [(p.get("x",0), p.get("y",0)) for p in raw_points]
+        crs_name, zone_params = detect_crs(xy)
+        crs_detected = crs_name
+        cum = 0.0; prev = None
+        for i, pt in enumerate(raw_points):
+            x = float(pt.get("x", pt.get("lon", 0)))
+            y = float(pt.get("y", pt.get("lat", 0)))
+            if crs_name == "WGS84": lon, lat = x, y
+            else: lon, lat = _gauss_kruger_to_geo(x, y, zone_params)
+            if prev: cum += _haversine(prev[0], prev[1], lon, lat)
+            prev = (lon, lat)
+            route_points.append(RoutePoint(
+                index=i, x=x, y=y, z=float(pt.get("z",0)),
+                lon=round(lon,8), lat=round(lat,8),
+                depth=float(pt.get("depth",1.2)), pk=round(cum,1),
+                description=pt.get("description",""),
+            ))
+        meta = {"format": "JSON", "points_count": len(route_points)}
+    else:
+        return jsonify({"error": "Ожидается файл или JSON"}), 400
+
+    pid = str(uuid.uuid4())
+    route_json = json.dumps([_rp(p) for p in route_points], ensure_ascii=False)
+    total_length = route_points[-1].pk if route_points else 0
+
+    with get_db() as conn:
+        db_run(conn,
+            """INSERT INTO projects (id, name, status, total_length_m, crs, route, meta)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (pid, project_name, "parsed", total_length, crs_detected,
+             route_json, json.dumps(meta, ensure_ascii=False))
+        )
+
+    return jsonify({
+        "success": True, "project_id": pid, "project_name": project_name,
+        "route_summary": {
+            "points_count": len(route_points),
+            "total_length_m": total_length,
+            "crs_detected": crs_detected,
+            "bbox": meta.get("bbox"),
+        },
+        "route": [_rp(p) for p in route_points],
+        "warnings": parse_warnings,
+        "next_step": f"/api/v1/analyze/{pid}",
+    })
+
+
+# ── Analyze ───────────────────────────────────────────────────────────────────
+@api_bp.route("/analyze/<pid>", methods=["POST"])
+def analyze(pid):
+    with get_db() as conn:
+        project = db_get(conn, "SELECT * FROM projects WHERE id = %s", (pid,))
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        body = request.get_json(silent=True) or {}
+        demo = body.get("demo_mode", False)
+        from flask import current_app
+        config = {
+            "CADASTRAL_BUFFER_M": 100,
+            "PKK_TIMEOUT": 15,
+            "APPROVAL_MATRIX": current_app.config.get("APPROVAL_MATRIX", {}),
+        }
+        route = [_drp(p) for p in project["route"]]
+        analyzer = CadastralAnalyzer(config=config)
+        cad = analyzer.analyze(route, demo_mode=demo)
+        rd = result_to_dict(cad)
+
+        db_run(conn,
+            """UPDATE projects SET cadastral_result = %s, status = %s, updated_at = NOW()
+               WHERE id = %s""",
+            (json.dumps(rd, ensure_ascii=False), "analyzed", pid)
+        )
+
+    return jsonify({"success": cad.success, "project_id": pid, **rd})
+
+
+# ── Generate PDF ──────────────────────────────────────────────────────────────
+@api_bp.route("/generate/<pid>", methods=["POST"])
+def generate(pid):
+    with get_db() as conn:
+        project = db_get(conn, "SELECT * FROM projects WHERE id = %s", (pid,))
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+        if not project.get("cadastral_result"):
+            return jsonify({"error": "Сначала выполните кадастровую сверку /analyze"}), 400
+
+        body = request.get_json(silent=True) or {}
+        approval_ids = body.get("approval_ids", None)
+
+        proj_dict = dict(project)
+        gen = PDFGenerator()
+        pdf_path = gen.generate_package(proj_dict, approval_ids=approval_ids)
+
+        db_run(conn,
+            "UPDATE projects SET status = %s, pdf_path = %s, updated_at = NOW() WHERE id = %s",
+            ("generated", pdf_path, pid)
+        )
+
+    return jsonify({"success": True, "download_url": f"/api/v1/download/{pid}"})
+
+
+@api_bp.route("/download/<pid>")
+def download(pid):
+    with get_db() as conn:
+        project = db_get(conn, "SELECT name, pdf_path FROM projects WHERE id = %s", (pid,))
+    if not project or not project.get("pdf_path"):
+        return jsonify({"error": "PDF не найден"}), 404
+    return send_file(project["pdf_path"], as_attachment=True,
+                     download_name=f"АС_СКЛ_{project['name']}.pdf",
+                     mimetype="application/pdf")
+
+
+# ── Project CRUD ──────────────────────────────────────────────────────────────
+@api_bp.route("/project/<pid>")
+def get_project(pid):
+    with get_db() as conn:
+        p = db_get(conn, "SELECT * FROM projects WHERE id = %s", (pid,))
+    if not p:
+        return jsonify({"error": "Не найден"}), 404
+    return jsonify(_serialize(p))
+
+@api_bp.route("/projects")
+def list_projects():
+    with get_db() as conn:
+        rows = db_all(conn,
+            "SELECT id, name, status, total_length_m FROM projects ORDER BY created_at DESC"
+        )
+    return jsonify({"projects": [dict(r) for r in rows]})
+
+@api_bp.route("/project/<pid>/approval/<int:aid>", methods=["PATCH"])
+def update_approval(pid, aid):
+    with get_db() as conn:
+        project = db_get(conn, "SELECT * FROM projects WHERE id = %s", (pid,))
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        body = request.get_json(silent=True) or {}
+        cad = project.get("cadastral_result") or {}
+        updated = None
+        for a in cad.get("approvals", []):
+            if a["id"] == aid:
+                if "status" in body: a["status"] = body["status"]
+                if "note" in body: a["note"] = body["note"]
+                updated = a
+                break
+
+        if not updated:
+            return jsonify({"error": "Согласование не найдено"}), 404
+
+        db_run(conn,
+            "UPDATE projects SET cadastral_result = %s, updated_at = NOW() WHERE id = %s",
+            (json.dumps(cad, ensure_ascii=False), pid)
+        )
+
+    return jsonify({"success": True, "approval": updated})
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _rp(p: RoutePoint): return {
+    "index": p.index, "x": p.x, "y": p.y, "z": p.z,
+    "lon": p.lon, "lat": p.lat, "depth": p.depth,
+    "pk": p.pk, "description": p.description,
+}
+
+def _drp(d): return RoutePoint(
+    index=d["index"], x=d["x"], y=d["y"], z=d.get("z",0),
+    lon=d["lon"], lat=d["lat"], depth=d.get("depth",1.2),
+    pk=d["pk"], description=d.get("description",""),
+)
+
+def _serialize(row):
+    d = dict(row)
+    for k in ("created_at", "updated_at"):
+        if d.get(k):
+            d[k] = d[k].isoformat()
+    return d

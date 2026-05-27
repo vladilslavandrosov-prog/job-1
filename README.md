@@ -1,122 +1,65 @@
-# АС СКЛ v2.0 — Полный стек
+# АС СКЛ v2.0 — Система согласования кабельных линий
 
-![Python](https://img.shields.io/badge/Python-3.12-blue)
-![Flask](https://img.shields.io/badge/Flask-3.1-green)
-![React](https://img.shields.io/badge/React-18-61DAFB)
-![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900)
-![Tests](https://img.shields.io/badge/tests-41%20passed-brightgreen)
-![Docker](https://img.shields.io/badge/Docker-compose-2496ED)
+ИИ-система автоматизации согласования строительства кабельных линий для ООО «Электромонтаж-110».
 
-> **Заказчик:** ООО «Электромонтаж-110»
+## Run & Operate
 
-ИИ-система автоматизации согласования строительства кабельных линий.
+- `python artifacts/as-skl/run.py` — запуск Flask-сервера (порт из `$PORT`, по умолчанию 5000)
+- Healthcheck: `GET /api/v1/health`
 
-## Быстрый запуск (Docker)
+## Stack
 
-```bash
-git clone https://github.com/vladilslavandrosov-prog/job-1.git
-cd job-1
-docker-compose up --build
-# → http://localhost
-```
+- Python 3.12, Flask 3.1
+- NumPy, Pandas, ReportLab
+- Frontend: React 18 + Leaflet (CDN, без сборки, JSX через Babel-standalone)
+- In-memory хранилище проектов (→ PostgreSQL в roadmap)
 
-## Запуск без Docker
+## Where things live
 
-```bash
-cd backend
-pip install -r requirements.txt
-python run.py
-# → http://localhost:5000
-```
-
-## Функциональность
-
-### Что умеет система
-
-| Шаг | Функция | Технология |
-|-----|---------|-----------|
-| 1 | Загрузка DXF/CSV/JSON с координатами трассы | Flask multipart / JSON API |
-| 2 | Парсинг + конвертация МСК→WGS-84 | Гаусс-Крюгер (numpy/math) |
-| 3 | Кадастровая сверка: 9 участков, форма собственности | PKK API Росреестра |
-| 4 | Анализ пересечений с охранными зонами | Ray-casting + segment intersection |
-| 5 | Реестр согласований: матрица → инстанции + сроки | Конфигурируемая матрица |
-| 6 | Интерактивная карта трассы с кадастром | React + Leaflet.js |
-| 7 | Генерация PDF-комплектов писем | ReportLab |
-| 8 | Трекинг статусов согласований | REST PATCH API |
-
-### Интерфейс
-
-**Sidebar (3 вкладки):**
-- **Загрузка** — drag-and-drop DXF/CSV или демо-данные
-- **Анализ** — запуск кадастровой сверки (реальный PKK или демо)
-- **Согласования** — реестр с выбором, статусами, генерацией PDF
-
-**Карта (Leaflet):**
-- Трасса КЛ с поворотными точками
-- Кадастровые участки (цвет по форме собственности)
-- Маркеры пересечений (! — красный критично, оранжевый — важно)
-- Всплывающие карточки по клику
-
-## Структура
-
-```
-job-1/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── config.py          # Матрица согласований, охранные зоны
-│   │   ├── routes.py          # REST API эндпоинты
-│   │   ├── templates/
-│   │   │   └── index.html     # React SPA (без сборки)
-│   │   └── modules/
-│   │       ├── dwg_parser.py  # DXF/CSV парсер, МСК→WGS-84
-│   │       ├── cadastral.py   # PKK API, геоанализ, реестр
-│   │       └── pdf_generator.py  # Генерация PDF-комплектов
-│   ├── tests/
-│   │   └── test_backend.py    # 41 unit-тест
-│   ├── Dockerfile
-│   └── requirements.txt
-├── nginx/
-│   └── nginx.conf
-├── docker-compose.yml
-└── README.md
-```
+- `artifacts/as-skl/` — Flask backend + frontend
+  - `app/__init__.py` — фабрика приложения
+  - `app/config.py` — конфиг: матрица согласований, охранные зоны
+  - `app/routes.py` — REST API endpoints
+  - `app/modules/dwg_parser.py` — парсер DXF/CSV, конвертация МСК→WGS-84
+  - `app/modules/cadastral.py` — PKK API Росреестра, геоанализ пересечений
+  - `app/modules/pdf_generator.py` — генерация PDF-пакетов (ReportLab)
+  - `app/templates/index.html` — React SPA (фронтенд)
 
 ## API
 
 ```
-GET  /api/v1/health                     — healthcheck
-POST /api/v1/upload                     — загрузка файла или JSON точек
-POST /api/v1/analyze/<pid>              — кадастровая сверка
-POST /api/v1/generate/<pid>             — генерация PDF
-GET  /api/v1/download/<pid>             — скачать PDF
-GET  /api/v1/project/<pid>              — данные проекта
-GET  /api/v1/projects                   — список проектов
+GET  /api/v1/health                      — healthcheck
+POST /api/v1/upload                      — загрузка DXF/CSV/JSON с координатами
+POST /api/v1/analyze/<pid>               — кадастровая сверка (demo_mode: true/false)
+POST /api/v1/generate/<pid>              — генерация PDF-пакета
+GET  /api/v1/download/<pid>              — скачать PDF
+GET  /api/v1/project/<pid>               — данные проекта
+GET  /api/v1/projects                    — список проектов
 PATCH /api/v1/project/<pid>/approval/<id> — обновить статус согласования
 ```
 
-## Тесты
+## Architecture decisions
 
-```bash
-cd backend
-python tests/test_backend.py
-# Ran 41 tests — OK
-```
+- Flask-приложение с единым Python-процессом: и фронтенд, и API
+- React SPA компилируется Babel прямо в браузере — не требует сборки
+- Геоанализ без shapely/pyproj — только numpy/math (Гаусс-Крюгер)
+- PKK API Росреестра с автоматическим откатом на демо-данные при недоступности
 
-## Дорожная карта
+## Product
 
-- [x] Backend: парсинг DWG/DXF/CSV
-- [x] Backend: кадастровая сверка (PKK API + геоанализ)
-- [x] Backend: матрица согласований, реестр
-- [x] Backend: генерация PDF-комплектов (ReportLab)
-- [x] Frontend: карта трассы (React + Leaflet)
-- [x] Frontend: реестр согласований (выбор, статусы)
-- [x] Docker-compose (backend + nginx)
-- [ ] База данных (PostgreSQL + SQLAlchemy)
-- [ ] Аутентификация пользователей (JWT)
-- [ ] OCR PDF ОПС (Tesseract)
-- [ ] Интеграция с ЕСИА / ЭЦП
+- Загрузка трасс: DXF/DWG (AutoCAD), CSV с координатами, JSON API
+- Кадастровая сверка: 9+ типов участков, форма собственности через PKK Росреестра
+- Анализ пересечений: охранные зоны, Ray-casting + intersection алгоритм
+- Матрица согласований: автоматическое определение инстанций и сроков
+- Интерактивная карта: трасса КЛ, кадастр, маркеры пересечений (Leaflet)
+- Генерация PDF-комплектов писем (ReportLab)
 
----
+## User preferences
 
-MIT License · ООО «Электромонтаж-110» · 2025
+- Язык общения: русский
+
+## Gotchas
+
+- Babel транспилирует JSX в браузере — при первой загрузке интерфейс появляется через 2-3 сек.
+- Данные хранятся в памяти (in-memory) — перезапуск сервера сбрасывает все проекты
+- DejaVu-шрифты для PDF ищутся в `/usr/share/fonts/truetype/dejavu/` — при отсутствии автоматически используется Helvetica
