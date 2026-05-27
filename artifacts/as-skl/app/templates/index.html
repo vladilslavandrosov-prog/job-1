@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>АС СКЛ v2.0 — Согласование кабельных линий</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- React -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<!-- Babel (JSX in browser) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<style>
+:root {
+  --navy:#0E1B33; --navy2:#1A2A4A; --blue:#2E5C8A; --blue2:#3A7BCC;
+  --green:#7AB648; --red:#C62828; --amber:#F57F17;
+  --border:#2E4060; --bg:#0A1220; --card:#112244;
+  --text:#E0E8F5; --muted:#7A94B8; --light:#A8C4E8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* Header */
+.header{background:var(--navy2);border-bottom:2px solid var(--green);
+  display:flex;align-items:center;padding:0 20px;height:52px;gap:16px;flex-shrink:0}
+.logo{font-size:18px;font-weight:700;color:#fff}
+.badge{background:var(--green);color:#fff;padding:2px 10px;border-radius:12px;
+  font-size:11px;font-weight:600}
+.header-right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.header-right .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+  animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* Layout */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* Sidebar */
+.sidebar{width:380px;background:var(--navy2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-tabs{display:flex;border-bottom:1px solid var(--border)}
+.tab{flex:1;padding:12px 8px;text-align:center;font-size:12px;cursor:pointer;
+  color:var(--muted);border-bottom:2px solid transparent;transition:all .2s}
+.tab.active{color:var(--green);border-bottom-color:var(--green);font-weight:600}
+.sidebar-content{flex:1;overflow-y:auto;padding:16px}
+.sidebar-content::-webkit-scrollbar{width:4px}
+.sidebar-content::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* Map */
+.map-wrap{flex:1;position:relative}
+#map{width:100%;height:100%}
+.map-overlay{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:1000}
+.map-btn{background:var(--navy2);border:1px solid var(--border);color:var(--text);
+  padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;
+  transition:background .15s}
+.map-btn:hover{background:var(--blue)}
+.map-btn.active{background:var(--blue);border-color:var(--blue2)}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:14px;margin-bottom:12px}
+.card-title{font-size:11px;font-weight:700;color:var(--green);
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px}
+
+/* Upload zone */
+.upload-zone{border:2px dashed var(--border);border-radius:8px;padding:28px 16px;
+  text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--blue2);background:rgba(46,92,138,.15)}
+.upload-zone .icon{font-size:32px;margin-bottom:8px}
+.upload-zone p{color:var(--muted);font-size:13px}
+.upload-zone strong{color:var(--text);display:block;margin-bottom:4px;font-size:14px}
+
+/* Inputs */
+input,select{background:var(--bg);border:1px solid var(--border);color:var(--text);
+  padding:8px 12px;border-radius:6px;font-size:13px;width:100%;
+  outline:none;transition:border .15s}
+input:focus,select:focus{border-color:var(--blue2)}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px;margin-top:10px}
+
+/* Buttons */
+.btn{background:var(--blue);color:#fff;border:none;padding:10px 18px;
+  border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;
+  transition:background .15s;display:flex;align-items:center;gap:6px}
+.btn:hover{background:var(--blue2)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-green{background:var(--green)}
+.btn-green:hover{background:#8BC34A}
+.btn-ghost{background:transparent;border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--card)}
+.btn-red{background:var(--red)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stat{background:var(--bg);border-radius:6px;padding:10px 12px;border:1px solid var(--border)}
+.stat-val{font-size:22px;font-weight:700;line-height:1}
+.stat-lbl{font-size:10px;color:var(--muted);margin-top:3px}
+.stat.crit .stat-val{color:var(--red)}
+.stat.imp  .stat-val{color:var(--amber)}
+.stat.ok   .stat-val{color:var(--green)}
+.stat.info .stat-val{color:var(--blue2)}
+
+/* Approval list */
+.approval-item{background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;
+  transition:border-color .15s}
+.approval-item:hover{border-color:var(--blue2)}
+.approval-item.selected{border-color:var(--blue2);background:rgba(46,92,138,.12)}
+.approval-item .ai-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.approval-item .ai-name{font-size:13px;font-weight:600;color:var(--text)}
+.approval-item .ai-basis{font-size:11px;color:var(--muted);margin-left:auto}
+.approval-item .ai-ref{font-size:11px;color:var(--muted);margin-bottom:6px}
+.approval-item .ai-footer{display:flex;gap:6px;align-items:center}
+.priority-badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.priority-critical{background:rgba(198,40,40,.2);color:#EF9A9A}
+.priority-important{background:rgba(245,127,23,.2);color:#FFCC80}
+.priority-recommended{background:rgba(122,182,72,.15);color:#A5D6A7}
+.status-badge{padding:2px 8px;border-radius:10px;font-size:10px;
+  background:rgba(122,182,72,.15);color:var(--green)}
+
+/* Parcel popup */
+.parcel-popup{background:var(--navy2);color:var(--text);border:1px solid var(--border);
+  border-radius:8px;padding:12px;min-width:200px;font-size:12px}
+.parcel-popup b{color:var(--light)}
+
+/* Alert */
+.alert{padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:10px;display:flex;gap:8px;align-items:flex-start}
+.alert-info{background:rgba(46,92,138,.25);border:1px solid var(--blue)}
+.alert-ok{background:rgba(122,182,72,.2);border:1px solid var(--green)}
+.alert-err{background:rgba(198,40,40,.2);border:1px solid var(--red)}
+.alert-warn{background:rgba(245,127,23,.2);border:1px solid var(--amber)}
+
+/* Progress */
+.steps{display:flex;gap:4px;margin-bottom:16px}
+.step{flex:1;height:4px;background:var(--border);border-radius:2px;transition:background .3s}
+.step.done{background:var(--green)}
+.step.active{background:var(--blue2)}
+
+/* Spinner */
+.spin{display:inline-block;width:16px;height:16px;border:2px solid transparent;
+  border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Intersection marker tooltip */
+.leaflet-popup-content-wrapper{background:var(--navy2)!important;
+  border:1px solid var(--border)!important;color:var(--text)!important;
+  border-radius:8px!important;box-shadow:none!important}
+.leaflet-popup-tip{background:var(--navy2)!important}
+.leaflet-popup-content{margin:12px!important;font-family:system-ui!important}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── API ────────────────────────────────────────────────────────────────────
+const api = {
+  async upload(formData) {
+    const r = await fetch("/api/v1/upload", { method:"POST", body:formData });
+    return r.json();
+  },
+  async uploadJSON(payload) {
+    const r = await fetch("/api/v1/upload", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    return r.json();
+  },
+  async analyze(pid, demo=true) {
+    const r = await fetch(`/api/v1/analyze/${pid}`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({demo_mode:demo})
+    });
+    return r.json();
+  },
+  async generate(pid, ids=null) {
+    const r = await fetch(`/api/v1/generate/${pid}`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({approval_ids:ids})
+    });
+    return r.json();
+  },
+  async patchApproval(pid, aid, data) {
+    const r = await fetch(`/api/v1/project/${pid}/approval/${aid}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(data)
+    });
+    return r.json();
+  },
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const PRI_LABELS = {critical:"● Критично",important:"● Важно",recommended:"○ Рекоменд."};
+const PRI_CLASS  = {critical:"priority-critical",important:"priority-important",recommended:"priority-recommended"};
+const OWN_COLORS = {private:"#FFF8E1",municipal:"#DCEEFB",federal:"#E8F5E9",state:"#E8F5E9"};
+const OWN_LABELS = {private:"Частная",municipal:"Муниципальная",federal:"Гос. (федер.)",state:"Гос. (регион.)"};
+const SEV_COLORS = {critical:"#C62828",warning:"#F57F17",info:"#2E5C8A"};
+
+function Alert({type="info",children}){
+  const icon = {info:"ℹ",ok:"✓",err:"✗",warn:"⚠"}[type]||"ℹ";
+  return <div className={`alert alert-${type}`}><span>{icon}</span><span>{children}</span></div>;
+}
+function Spin(){return <span className="spin"/>}
+
+// ── Map Component ──────────────────────────────────────────────────────────
+function MapView({route, parcels, intersections, onParcelClick}){
+  const mapRef = useRef(null);
+  const leafRef = useRef(null);
+  const layersRef = useRef({route:null, parcels:null, intersections:null});
+  const [activeLayers, setActiveLayers] = useState({route:true,parcels:true,intersections:true});
+
+  useEffect(()=>{
+    if(leafRef.current) return;
+    leafRef.current = L.map(mapRef.current, {zoomControl:false});
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      attribution:"© OpenStreetMap",maxZoom:19
+    }).addTo(leafRef.current);
+    L.control.zoom({position:"bottomright"}).addTo(leafRef.current);
+  },[]);
+
+  // Route
+  useEffect(()=>{
+    const map = leafRef.current; if(!map||!route.length) return;
+    if(layersRef.current.route) map.removeLayer(layersRef.current.route);
+    const pts = route.filter(p=>p.lat&&p.lon).map(p=>[p.lat,p.lon]);
+    if(!pts.length) return;
+    const grp = L.layerGroup();
+    L.polyline(pts,{color:"#E65100",weight:3,opacity:.9}).addTo(grp);
+    pts.forEach((pt,i)=>{
+      const p = route[i];
+      const isEnd = i===0||i===pts.length-1;
+      const circle = L.circleMarker(pt,{
+        radius:isEnd?7:4, fillColor:"#E65100", color:"white",
+        weight:1.5, fillOpacity:1
+      }).addTo(grp);
+      circle.bindPopup(`<div class="parcel-popup">
+        <b>${p.description||"Т-"+(i+1)}</b><br/>
+        ПК: ${(p.pk/1000).toFixed(3).replace(".","+")}<br/>
+        lon: ${p.lon.toFixed(6)}, lat: ${p.lat.toFixed(6)}<br/>
+        Глубина: ${p.depth} м
+      </div>`);
+    });
+    layersRef.current.route = grp;
+    if(activeLayers.route) grp.addTo(map);
+    map.fitBounds(pts,{padding:[40,40]});
+  },[route]);
+
+  // Parcels
+  useEffect(()=>{
+    const map = leafRef.current; if(!map) return;
+    if(layersRef.current.parcels) map.removeLayer(layersRef.current.parcels);
+    const grp = L.layerGroup();
+    parcels.forEach(p=>{
+      if(!p.polygon||p.polygon.length<3) return;
+      const latlngs = p.polygon.map(([lon,lat])=>[lat,lon]);
+      const color = OWN_COLORS[p.owner_type]||"#E0E0E0";
+      const poly = L.polygon(latlngs,{
+        color:"#5B8DB8", weight:1, fillColor:color, fillOpacity:.45
+      }).addTo(grp);
+      poly.bindPopup(`<div class="parcel-popup">
+        <b>${p.cn}</b><br/>
+        Категория: ${p.category}<br/>
+        Собственность: <b>${OWN_LABELS[p.owner_type]||p.owner_type}</b><br/>
+        ${p.owner_name?`Правообладатель: ${p.owner_name}<br/>`:""}
+        Площадь: ${(p.area/10000).toFixed(2)} га
+      </div>`);
+      poly.on("click",()=>onParcelClick&&onParcelClick(p));
+    });
+    layersRef.current.parcels = grp;
+    if(activeLayers.parcels) grp.addTo(map);
+  },[parcels]);
+
+  // Intersections
+  useEffect(()=>{
+    const map = leafRef.current; if(!map) return;
+    if(layersRef.current.intersections) map.removeLayer(layersRef.current.intersections);
+    const grp = L.layerGroup();
+    intersections.forEach((ix,i)=>{
+      // Ищем точку трассы с ближайшим пикетом
+      const pk = (ix.pk_start+ix.pk_end)/2;
+      const nearest = route.reduce((a,b)=>Math.abs(b.pk-pk)<Math.abs(a.pk-pk)?b:a, route[0]||{});
+      if(!nearest||!nearest.lat) return;
+      const col = SEV_COLORS[ix.severity]||"#2E5C8A";
+      const marker = L.circleMarker([nearest.lat,nearest.lon],{
+        radius:10, fillColor:col, color:"white",
+        weight:2, fillOpacity:.95
+      }).addTo(grp);
+      const icon = L.divIcon({
+        html:`<div style="color:white;font-weight:700;font-size:12px;line-height:1;
+          margin-top:-1px">!</div>`,
+        className:"",iconSize:[0,0],iconAnchor:[0,0]
+      });
+      L.marker([nearest.lat,nearest.lon],{icon}).addTo(grp);
+      marker.bindPopup(`<div class="parcel-popup">
+        <b>${ix.object_name}</b><br/>
+        Тип: ${ix.object_type}<br/>
+        ПК: ${(ix.pk_start/1000).toFixed(3).replace(".","+")}<br/>
+        Длина пересечения: ${ix.length_m} м<br/>
+        Приоритет: <b style="color:${col}">${ix.severity}</b>
+      </div>`);
+    });
+    layersRef.current.intersections = grp;
+    if(activeLayers.intersections) grp.addTo(map);
+  },[intersections]);
+
+  // Toggle layers
+  const toggle = (name) => {
+    const map = leafRef.current; if(!map) return;
+    const layer = layersRef.current[name]; if(!layer) return;
+    const next = !activeLayers[name];
+    if(next) layer.addTo(map); else map.removeLayer(layer);
+    setActiveLayers(p=>({...p,[name]:next}));
+  };
+
+  return (
+    <div className="map-wrap">
+      <div id="map" ref={mapRef}/>
+      <div className="map-overlay">
+        <button className={`map-btn${activeLayers.route?" active":""}`}
+          onClick={()=>toggle("route")}>🔶 Трасса КЛ</button>
+        <button className={`map-btn${activeLayers.parcels?" active":""}`}
+          onClick={()=>toggle("parcels")}>📦 Кадастр</button>
+        <button className={`map-btn${activeLayers.intersections?" active":""}`}
+          onClick={()=>toggle("intersections")}>⚠ Пересечения</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Upload Tab ─────────────────────────────────────────────────────────────
+function UploadTab({onUploaded}){
+  const [dragging, setDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [projectName, setProjectName] = useState("КЛ-10кВ «ТП-1 — ТП-2»");
+  const [useDemo, setUseDemo] = useState(true);
+  const fileRef = useRef();
+
+  const DEMO_POINTS = [
+    {x:471234.520,y:2410118.340,depth:1.2,description:"ТП-1 (начало)"},
+    {x:471358.910,y:2410118.340,depth:1.2,description:"Поворот Т-2"},
+    {x:471358.910,y:2410529.780,depth:1.5,description:"Охр. зона газа"},
+    {x:471586.220,y:2410823.450,depth:1.5,description:"Пересечение дороги"},
+    {x:471712.450,y:2411284.110,depth:1.2,description:"Прямолинейный"},
+    {x:471712.450,y:2411912.890,depth:1.2,description:"Поворот Т-6"},
+    {x:471938.670,y:2412194.320,depth:1.2,description:"Пересечение связи"},
+    {x:472054.110,y:2412194.320,depth:1.2,description:"ТП-2 (конец)"},
+  ];
+
+  async function handleFile(file){
+    setLoading(true); setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("project", projectName);
+    const data = await api.upload(fd);
+    setLoading(false);
+    if(data.success){ onUploaded(data); }
+    else setMsg({type:"err", text: (data.errors||[data.error||"Ошибка"]).join("; ")});
+  }
+
+  async function handleDemo(){
+    setLoading(true); setMsg(null);
+    const data = await api.uploadJSON({project:projectName, points:DEMO_POINTS});
+    setLoading(false);
+    if(data.success) onUploaded(data);
+    else setMsg({type:"err", text:data.error||"Ошибка загрузки"});
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Исходные данные проекта</div>
+        <label>Название проекта</label>
+        <input value={projectName} onChange={e=>setProjectName(e.target.value)}
+          placeholder="КЛ-10кВ «ТП-1 — ТП-2»"/>
+      </div>
+
+      <div
+        className={`upload-zone${dragging?" drag":""}`}
+        onClick={()=>fileRef.current.click()}
+        onDragOver={e=>{e.preventDefault();setDragging(true)}}
+        onDragLeave={()=>setDragging(false)}
+        onDrop={e=>{e.preventDefault();setDragging(false);
+          const f=e.dataTransfer.files[0]; if(f) handleFile(f);}}
+      >
+        <div className="icon">📁</div>
+        <strong>Перетащите файл или кликните</strong>
+        <p>DXF / DWG (AutoCAD) · CSV с координатами</p>
+        <input ref={fileRef} type="file" accept=".dxf,.dwg,.csv,.xlsx"
+          style={{display:"none"}}
+          onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
+      </div>
+
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+
+      <div className="card">
+        <div className="card-title">Демо-режим</div>
+        <Alert type="info">
+          КЛ-10кВ «ТП-1—ТП-2», Москва ВАО · 8 точек · МСК-77 · 5 400 м
+        </Alert>
+        <button className="btn btn-green" style={{width:"100%"}}
+          onClick={handleDemo} disabled={loading}>
+          {loading ? <Spin/> : "⚡"} Загрузить демо-маршрут
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Analysis Tab ───────────────────────────────────────────────────────────
+function AnalysisTab({project, onAnalyzed}){
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [demoMode, setDemoMode] = useState(true);
+
+  async function run(){
+    setLoading(true); setMsg(null);
+    const data = await api.analyze(project.project_id, demoMode);
+    setLoading(false);
+    if(data.success) onAnalyzed(data);
+    else setMsg({type:"err", text:(data.errors||[data.error||"Ошибка"]).join("; ")});
+  }
+
+  const s = project.route_summary||{};
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Загруженный маршрут</div>
+        <div className="stats">
+          <div className="stat info">
+            <div className="stat-val">{s.points_count||0}</div>
+            <div className="stat-lbl">точек</div>
+          </div>
+          <div className="stat info">
+            <div className="stat-val">{((s.total_length_m||0)/1000).toFixed(1)}</div>
+            <div className="stat-lbl">км трассы</div>
+          </div>
+        </div>
+        <p style={{fontSize:12,color:"var(--muted)"}}>
+          СК: <b style={{color:"var(--light)"}}>{s.crs_detected||"—"}</b>
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Кадастровая сверка</div>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={demoMode}
+            onChange={e=>setDemoMode(e.target.checked)}
+            style={{width:"auto"}}/>
+          Демо-режим (без запроса к PKK API Росреестра)
+        </label>
+        {!demoMode && <Alert type="warn">
+          Реальный запрос к PKK API Росреестра. Требуется интернет.
+        </Alert>}
+        {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+        <div className="btn-row">
+          <button className="btn" style={{flex:1}} onClick={run} disabled={loading}>
+            {loading?<><Spin/> Анализируем...</>:"🗺 Запустить кадастровую сверку"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Approvals Tab ──────────────────────────────────────────────────────────
+function ApprovalsTab({project, cadResult, onGenerate}){
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [statuses, setStatuses] = useState({});
+
+  const approvals = cadResult?.approvals||[];
+  const summary   = cadResult?.summary||{};
+
+  const toggleSel = (id) => {
+    setSelected(s=>{const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n;});
+  };
+  const selectAll = () => setSelected(new Set(approvals.map(a=>a.id)));
+  const clearSel  = () => setSelected(new Set());
+
+  async function generate(){
+    setLoading(true);
+    const ids = selected.size ? [...selected] : null;
+    const data = await api.generate(project.project_id, ids);
+    setLoading(false);
+    if(data.success) onGenerate(data);
+  }
+
+  async function updateStatus(approval, status){
+    setStatuses(s=>({...s,[approval.id]:status}));
+    await api.patchApproval(project.project_id, approval.id, {status});
+  }
+
+  return (
+    <div>
+      <div className="stats">
+        <div className="stat crit">
+          <div className="stat-val">{summary.critical_approvals||0}</div>
+          <div className="stat-lbl">критично</div>
+        </div>
+        <div className="stat imp">
+          <div className="stat-val">{summary.important_approvals||0}</div>
+          <div className="stat-lbl">важно</div>
+        </div>
+        <div className="stat ok">
+          <div className="stat-val">{summary.total_approvals||0}</div>
+          <div className="stat-lbl">всего</div>
+        </div>
+        <div className="stat info">
+          <div className="stat-val">{summary.critical_path_days||0}</div>
+          <div className="stat-lbl">дней крит.путь</div>
+        </div>
+      </div>
+
+      <div className="btn-row" style={{marginBottom:10}}>
+        <button className="btn btn-sm btn-ghost" onClick={selectAll}>✓ Все</button>
+        <button className="btn btn-sm btn-ghost" onClick={clearSel}>✗ Снять</button>
+        <span style={{fontSize:11,color:"var(--muted)",marginLeft:"auto",alignSelf:"center"}}>
+          Выбрано: {selected.size||"все"}
+        </span>
+      </div>
+
+      {approvals.map(a=>(
+        <div key={a.id}
+          className={`approval-item${selected.has(a.id)?" selected":""}`}
+          onClick={()=>toggleSel(a.id)}>
+          <div className="ai-header">
+            <span className={`priority-badge ${PRI_CLASS[a.priority]||""}`}>
+              {PRI_LABELS[a.priority]||a.priority}
+            </span>
+            <span className="ai-name">{a.instance_name}</span>
+            <span className="ai-basis">{a.legal_basis}</span>
+          </div>
+          <div className="ai-ref">{a.intersection_ref}</div>
+          <div className="ai-footer">
+            <span className="status-badge">
+              {statuses[a.id]||a.status}
+            </span>
+            {a.review_days && <span style={{fontSize:10,color:"var(--muted)"}}>
+              ⏱ {a.review_days} дн.
+            </span>}
+            <span style={{fontSize:10,color:"var(--muted)",marginLeft:"auto"}}>
+              📎 {a.attachments?.length||0} прил.
+            </span>
+            <select
+              style={{width:"auto",padding:"2px 6px",fontSize:11}}
+              value={statuses[a.id]||a.status}
+              onChange={e=>{e.stopPropagation();updateStatus(a,e.target.value)}}
+              onClick={e=>e.stopPropagation()}>
+              <option value="pending">Ожидание</option>
+              <option value="sent">Отправлено</option>
+              <option value="approved">Согласовано</option>
+              <option value="rejected">Отклонено</option>
+            </select>
+          </div>
+        </div>
+      ))}
+
+      <button className="btn btn-green" style={{width:"100%",marginTop:10}}
+        onClick={generate} disabled={loading||!approvals.length}>
+        {loading?<><Spin/> Генерируем...</>:"📄 Сгенерировать PDF-комплекты"}
+      </button>
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────────
+function App(){
+  const [tab, setTab] = useState("upload");
+  const [project, setProject] = useState(null);
+  const [cadResult, setCadResult] = useState(null);
+  const [genResult, setGenResult] = useState(null);
+  const [step, setStep] = useState(0);  // 0=upload,1=analyze,2=approvals
+
+  const route        = project?.route||[];
+  const parcels      = cadResult?.parcels||[];
+  const intersections= cadResult?.intersections||[];
+
+  function onUploaded(data){
+    setProject(data); setCadResult(null); setGenResult(null);
+    setStep(1); setTab("analyze");
+  }
+  function onAnalyzed(data){
+    setCadResult(data); setStep(2); setTab("approvals");
+  }
+  function onGenerate(data){
+    setGenResult(data); setStep(3);
+  }
+
+  const TABS = [
+    {key:"upload",   label:"1 Загрузка"},
+    {key:"analyze",  label:"2 Анализ"},
+    {key:"approvals",label:"3 Согласования"},
+  ];
+
+  return (
+    <div className="app">
+      <div className="header">
+        <span className="logo">АС СКЛ</span>
+        <span className="badge">v2.0</span>
+        <span style={{color:"var(--muted)",fontSize:13}}>
+          Система согласования кабельных линий · ООО «Электромонтаж-110»
+        </span>
+        <div className="header-right">
+          {project && <span style={{fontSize:12,color:"var(--light)"}}>
+            📋 {project.project_name}
+          </span>}
+          {genResult && (
+            <a href={genResult.download_url} target="_blank"
+              className="btn btn-green btn-sm">⬇ Скачать PDF</a>
+          )}
+          <span className="status-dot"/>
+        </div>
+      </div>
+
+      <div className="main">
+        {/* Sidebar */}
+        <div className="sidebar">
+          <div className="sidebar-tabs">
+            {TABS.map(t=>(
+              <div key={t.key}
+                className={`tab${tab===t.key?" active":""}`}
+                onClick={()=>tab!==t.key&&(step>={TABS.findIndex(x=>x.key===t.key)}||true)&&setTab(t.key)}>
+                {t.label}
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-content">
+            {/* Progress */}
+            <div className="steps">
+              {[0,1,2,3].map(i=>(
+                <div key={i} className={`step${i<step?" done":i===step?" active":""}`}/>
+              ))}
+            </div>
+
+            {tab==="upload" && (
+              <UploadTab onUploaded={onUploaded}/>
+            )}
+            {tab==="analyze" && (
+              project
+                ? <AnalysisTab project={project} onAnalyzed={onAnalyzed}/>
+                : <Alert type="info">Сначала загрузите маршрут</Alert>
+            )}
+            {tab==="approvals" && (
+              cadResult
+                ? <ApprovalsTab project={project} cadResult={cadResult} onGenerate={onGenerate}/>
+                : <Alert type="info">Сначала выполните кадастровую сверку</Alert>
+            )}
+          </div>
+        </div>
+
+        {/* Map */}
+        <MapView
+          route={route}
+          parcels={parcels}
+          intersections={intersections}
+        />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

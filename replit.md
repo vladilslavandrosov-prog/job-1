@@ -1,45 +1,65 @@
-# [Project name]
+# АС СКЛ v2.0 — Система согласования кабельных линий
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+ИИ-система автоматизации согласования строительства кабельных линий для ООО «Электромонтаж-110».
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `python artifacts/as-skl/run.py` — запуск Flask-сервера (порт из `$PORT`, по умолчанию 5000)
+- Healthcheck: `GET /api/v1/health`
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.12, Flask 3.1
+- NumPy, Pandas, ReportLab
+- Frontend: React 18 + Leaflet (CDN, без сборки, JSX через Babel-standalone)
+- In-memory хранилище проектов (→ PostgreSQL в roadmap)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/as-skl/` — Flask backend + frontend
+  - `app/__init__.py` — фабрика приложения
+  - `app/config.py` — конфиг: матрица согласований, охранные зоны
+  - `app/routes.py` — REST API endpoints
+  - `app/modules/dwg_parser.py` — парсер DXF/CSV, конвертация МСК→WGS-84
+  - `app/modules/cadastral.py` — PKK API Росреестра, геоанализ пересечений
+  - `app/modules/pdf_generator.py` — генерация PDF-пакетов (ReportLab)
+  - `app/templates/index.html` — React SPA (фронтенд)
+
+## API
+
+```
+GET  /api/v1/health                      — healthcheck
+POST /api/v1/upload                      — загрузка DXF/CSV/JSON с координатами
+POST /api/v1/analyze/<pid>               — кадастровая сверка (demo_mode: true/false)
+POST /api/v1/generate/<pid>              — генерация PDF-пакета
+GET  /api/v1/download/<pid>              — скачать PDF
+GET  /api/v1/project/<pid>               — данные проекта
+GET  /api/v1/projects                    — список проектов
+PATCH /api/v1/project/<pid>/approval/<id> — обновить статус согласования
+```
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Flask-приложение с единым Python-процессом: и фронтенд, и API
+- React SPA компилируется Babel прямо в браузере — не требует сборки
+- Геоанализ без shapely/pyproj — только numpy/math (Гаусс-Крюгер)
+- PKK API Росреестра с автоматическим откатом на демо-данные при недоступности
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Загрузка трасс: DXF/DWG (AutoCAD), CSV с координатами, JSON API
+- Кадастровая сверка: 9+ типов участков, форма собственности через PKK Росреестра
+- Анализ пересечений: охранные зоны, Ray-casting + intersection алгоритм
+- Матрица согласований: автоматическое определение инстанций и сроков
+- Интерактивная карта: трасса КЛ, кадастр, маркеры пересечений (Leaflet)
+- Генерация PDF-комплектов писем (ReportLab)
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Язык общения: русский
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Babel транспилирует JSX в браузере — при первой загрузке интерфейс появляется через 2-3 сек.
+- Данные хранятся в памяти (in-memory) — перезапуск сервера сбрасывает все проекты
+- DejaVu-шрифты для PDF ищутся в `/usr/share/fonts/truetype/dejavu/` — при отсутствии автоматически используется Helvetica

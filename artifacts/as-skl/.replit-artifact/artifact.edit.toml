@@ -1,13 +1,12 @@
-kind = "api"
+kind = "web"
 previewPath = "/"
 title = "АС СКЛ v2.0"
 version = "1.0.0"
-id = "3B4_FFSkEVBkAeYMFRJ2e"
 
 [[services]]
 localPort = 5000
 name = "АС СКЛ"
-paths = ["/"]
+paths = ["/", "/api/v1"]
 
 [services.development]
-run = "python /home/runner/workspace/artifacts/as-skl/run.py"
+run = "python artifacts/as-skl/run.py"
