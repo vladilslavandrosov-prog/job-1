@@ -75,9 +75,8 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
   const [activeLayers, setActiveLayers] = useState({ route: true, parcels: true, intersections: true });
   useEffect(() => {
     if (leafRef.current) return;
-    leafRef.current = L.map(mapRef.current, { zoomControl: false });
+    leafRef.current = L.map(mapRef.current, { zoomControl: false, attributionControl: false });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "\xA9 OpenStreetMap",
       maxZoom: 19
     }).addTo(leafRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(leafRef.current);
