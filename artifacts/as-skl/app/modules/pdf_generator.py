@@ -29,31 +29,19 @@ from reportlab.pdfgen import canvas as pdfcanvas
 logger = logging.getLogger(__name__)
 
 # ── Шрифты ────────────────────────────────────────────────────────────────────
-_FD = "/usr/share/fonts/truetype/dejavu/"
-
-def _try_register(name, path):
-    try:
-        pdfmetrics.registerFont(TTFont(name, path))
-        return True
-    except Exception as e:
-        logger.warning("Font not loaded %s: %s", path, e)
-        return False
-
-_have_normal  = _try_register("DJ",    _FD + "DejaVuSans.ttf")
-_have_bold    = _try_register("DJ-B",  _FD + "DejaVuSans-Bold.ttf")
-# Oblique variants may be absent — fall back to non-oblique
-_have_italic  = (_try_register("DJ-I",  _FD + "DejaVuSans-Oblique.ttf") or
-                 _try_register("DJ-I",  _FD + "DejaVuSans.ttf"))
-_have_boldita = (_try_register("DJ-BI", _FD + "DejaVuSans-BoldOblique.ttf") or
-                 _try_register("DJ-BI", _FD + "DejaVuSans-Bold.ttf"))
-_have_mono    = _try_register("DJM",   _FD + "DejaVuSansMono.ttf")
-
-_FONTS_OK = _have_normal and _have_bold
-
-if _FONTS_OK:
+_FD  = "/usr/share/fonts/truetype/dejavu/"
+_LFD = "/usr/share/fonts/truetype/liberation/"
+_FONTS_OK = False
+try:
+    pdfmetrics.registerFont(TTFont("DJ",   _FD  + "DejaVuSans.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-B", _FD  + "DejaVuSans-Bold.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-I", _LFD + "LiberationSans-Italic.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-BI",_LFD + "LiberationSans-BoldItalic.ttf"))
+    pdfmetrics.registerFont(TTFont("DJM",  _FD  + "DejaVuSansMono.ttf"))
     registerFontFamily("DJ", normal="DJ", bold="DJ-B", italic="DJ-I", boldItalic="DJ-BI")
-    F, FB, FI, FM = "DJ", "DJ-B", "DJ-I", "DJM" if _have_mono else "DJ"
-else:
+    F, FB, FI, FM = "DJ", "DJ-B", "DJ-I", "DJM"
+    _FONTS_OK = True
+except Exception:
     F = FB = FI = FM = "Helvetica"
 
 # ── Цвета ─────────────────────────────────────────────────────────────────────

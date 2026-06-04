@@ -5,7 +5,7 @@ from app import create_app
 app = create_app()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 80))
     print("=" * 60)
     print("  АС СКЛ v2.0 — Согласование кабельных линий")
     print(f"  URL: http://0.0.0.0:{port}")
