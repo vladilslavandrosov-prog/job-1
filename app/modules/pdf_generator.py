@@ -29,14 +29,15 @@ from reportlab.pdfgen import canvas as pdfcanvas
 logger = logging.getLogger(__name__)
 
 # ── Шрифты ────────────────────────────────────────────────────────────────────
-_FD = "/usr/share/fonts/truetype/dejavu/"
+_FD  = "/usr/share/fonts/truetype/dejavu/"
+_LFD = "/usr/share/fonts/truetype/liberation/"
 _FONTS_OK = False
 try:
-    pdfmetrics.registerFont(TTFont("DJ",   _FD + "DejaVuSans.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-B", _FD + "DejaVuSans-Bold.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-I", _FD + "DejaVuSans-Oblique.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-BI",_FD + "DejaVuSans-BoldOblique.ttf"))
-    pdfmetrics.registerFont(TTFont("DJM",  _FD + "DejaVuSansMono.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ",   _FD  + "DejaVuSans.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-B", _FD  + "DejaVuSans-Bold.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-I", _LFD + "LiberationSans-Italic.ttf"))
+    pdfmetrics.registerFont(TTFont("DJ-BI",_LFD + "LiberationSans-BoldItalic.ttf"))
+    pdfmetrics.registerFont(TTFont("DJM",  _FD  + "DejaVuSansMono.ttf"))
     registerFontFamily("DJ", normal="DJ", bold="DJ-B", italic="DJ-I", boldItalic="DJ-BI")
     F, FB, FI, FM = "DJ", "DJ-B", "DJ-I", "DJM"
     _FONTS_OK = True
