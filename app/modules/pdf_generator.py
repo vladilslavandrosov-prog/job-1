@@ -29,19 +29,38 @@ from reportlab.pdfgen import canvas as pdfcanvas
 logger = logging.getLogger(__name__)
 
 # ── Шрифты ────────────────────────────────────────────────────────────────────
-_FD  = "/usr/share/fonts/truetype/dejavu/"
-_LFD = "/usr/share/fonts/truetype/liberation/"
+# Шрифты ищем сначала в папке fonts/ рядом с проектом, затем в системных путях
+_HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BUNDLED = os.path.join(_HERE, "fonts")
+_SYS_DJ  = "/usr/share/fonts/truetype/dejavu/"
+_SYS_LIB = "/usr/share/fonts/truetype/liberation/"
+
+def _font_path(filename, dirs):
+    for d in dirs:
+        p = os.path.join(d, filename)
+        if os.path.exists(p):
+            return p
+    return None
+
 _FONTS_OK = False
 try:
-    pdfmetrics.registerFont(TTFont("DJ",   _FD  + "DejaVuSans.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-B", _FD  + "DejaVuSans-Bold.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-I", _LFD + "LiberationSans-Italic.ttf"))
-    pdfmetrics.registerFont(TTFont("DJ-BI",_LFD + "LiberationSans-BoldItalic.ttf"))
-    pdfmetrics.registerFont(TTFont("DJM",  _FD  + "DejaVuSansMono.ttf"))
+    dj    = _font_path("DejaVuSans.ttf",            [_BUNDLED, _SYS_DJ])
+    dj_b  = _font_path("DejaVuSans-Bold.ttf",       [_BUNDLED, _SYS_DJ])
+    dj_i  = _font_path("LiberationSans-Italic.ttf",    [_BUNDLED, _SYS_LIB])
+    dj_bi = _font_path("LiberationSans-BoldItalic.ttf",[_BUNDLED, _SYS_LIB])
+    djm   = _font_path("DejaVuSansMono.ttf",         [_BUNDLED, _SYS_DJ])
+    if not all([dj, dj_b, dj_i, dj_bi, djm]):
+        raise FileNotFoundError("Один или несколько шрифтов не найдены")
+    pdfmetrics.registerFont(TTFont("DJ",   dj))
+    pdfmetrics.registerFont(TTFont("DJ-B", dj_b))
+    pdfmetrics.registerFont(TTFont("DJ-I", dj_i))
+    pdfmetrics.registerFont(TTFont("DJ-BI",dj_bi))
+    pdfmetrics.registerFont(TTFont("DJM",  djm))
     registerFontFamily("DJ", normal="DJ", bold="DJ-B", italic="DJ-I", boldItalic="DJ-BI")
     F, FB, FI, FM = "DJ", "DJ-B", "DJ-I", "DJM"
     _FONTS_OK = True
-except Exception:
+except Exception as _e:
+    logger.warning(f"Шрифты не загружены ({_e}), используется Helvetica")
     F = FB = FI = FM = "Helvetica"
 
 # ── Цвета ─────────────────────────────────────────────────────────────────────
