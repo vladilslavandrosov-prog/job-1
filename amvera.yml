@@ -5,9 +5,9 @@ meta:
     version: "3.12"
 
 build:
-  requirementsPath: artifacts/as-skl/requirements.txt
+  requirementsPath: requirements.txt
 
 run:
-  scriptName: artifacts/as-skl/run.py
+  scriptName: main.py
   persistenceMount: /data
   containerPort: 80
