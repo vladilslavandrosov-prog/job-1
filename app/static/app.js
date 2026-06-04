@@ -58,9 +58,9 @@ const api = {
 };
 const PRI_LABELS = { critical: "\u25CF \u041A\u0440\u0438\u0442\u0438\u0447\u043D\u043E", important: "\u25CF \u0412\u0430\u0436\u043D\u043E", recommended: "\u25CB \u0420\u0435\u043A\u043E\u043C\u0435\u043D\u0434." };
 const PRI_CLASS = { critical: "priority-critical", important: "priority-important", recommended: "priority-recommended" };
-const OWN_COLORS = { private: "#FFF8E1", municipal: "#DCEEFB", federal: "#E8F5E9", state: "#E8F5E9" };
+const OWN_COLORS = { private: "#F9F1DC", municipal: "#E8F0E0", federal: "#EDE8D8", state: "#EDE8D8" };
 const OWN_LABELS = { private: "\u0427\u0430\u0441\u0442\u043D\u0430\u044F", municipal: "\u041C\u0443\u043D\u0438\u0446\u0438\u043F\u0430\u043B\u044C\u043D\u0430\u044F", federal: "\u0413\u043E\u0441. (\u0444\u0435\u0434\u0435\u0440.)", state: "\u0413\u043E\u0441. (\u0440\u0435\u0433\u0438\u043E\u043D.)" };
-const SEV_COLORS = { critical: "#C62828", warning: "#F57F17", info: "#2E5C8A" };
+const SEV_COLORS = { critical: "#B03A2E", warning: "#C9912A", info: "#7A8C5C" };
 function Alert({ type = "info", children }) {
   const icon = { info: "\u2139", ok: "\u2713", err: "\u2717", warn: "\u26A0" }[type] || "\u2139";
   return /* @__PURE__ */ React.createElement("div", { className: `alert alert-${type}` }, /* @__PURE__ */ React.createElement("span", null, icon), /* @__PURE__ */ React.createElement("span", null, children));
@@ -89,13 +89,13 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
     const pts = route.filter((p) => p.lat && p.lon).map((p) => [p.lat, p.lon]);
     if (!pts.length) return;
     const grp = L.layerGroup();
-    L.polyline(pts, { color: "#E65100", weight: 3, opacity: 0.9 }).addTo(grp);
+    L.polyline(pts, { color: (window.THEME||{}).routeColor||"#C4622D", weight: 3, opacity: 0.9 }).addTo(grp);
     pts.forEach((pt, i) => {
       const p = route[i];
       const isEnd = i === 0 || i === pts.length - 1;
       const circle = L.circleMarker(pt, {
         radius: isEnd ? 7 : 4,
-        fillColor: "#E65100",
+        fillColor: (window.THEME||{}).markerFill||"#C4622D",
         color: "white",
         weight: 1.5,
         fillOpacity: 1
