@@ -76,8 +76,9 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
   useEffect(() => {
     if (leafRef.current) return;
     leafRef.current = L.map(mapRef.current, { zoomControl: false });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
       attribution: "",
+      subdomains: "abcd",
       maxZoom: 19
     }).addTo(leafRef.current);
     L.control.zoom({ position: "bottomright" }).addTo(leafRef.current);
