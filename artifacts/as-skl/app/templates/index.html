@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>АС СКЛ v2.0 — Согласование кабельных линий</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 
 <!-- Google Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,22 +19,25 @@
 
 <style>
 :root {
-  /* Палитра «Дома Юга» */
-  --terra:   #C4622D;   /* терракота — главный акцент */
-  --terra2:  #A84E22;   /* тёмная терракота */
-  --terra-l: #E8896A;   /* светлая терракота */
-  --sand:    #F2EAD8;   /* песок — фон */
-  --sand2:   #EAE0CA;   /* песок чуть темнее */
-  --sand3:   #D9CCAE;   /* бордюры */
-  --cream:   #FDFAF4;   /* карточки */
-  --olive:   #7A8C5C;   /* зелёный акцент */
-  --olive-l: #A3B57A;
-  --rust:    #8B3A1C;   /* тёмно-красный */
-  --amber:   #C9912A;   /* золотисто-янтарный */
-  --text:    #2C1E10;   /* основной текст */
-  --muted:   #8C7B6B;   /* вспомогательный */
-  --light:   #6B5B4E;   /* средний */
-  --err:     #B03A2E;
+  /* Палитра «Инженерный синий» */
+  --terra:   #1F5FBF;   /* основной синий — навигация, фокус, ссылки */
+  --terra2:  #164A96;   /* тёмный синий — hover-состояния */
+  --terra-l: #5B8FDB;   /* светлый синий — бордюры при hover */
+  --sand:    #F4F7FB;   /* фон страницы */
+  --sand2:   #E9EEF5;   /* фон вкладок/статов */
+  --sand3:   #DCE3ED;   /* бордюры */
+  --cream:   #FFFFFF;   /* карточки */
+  --olive:   #2E9E5B;   /* успех/согласовано */
+  --olive-l: #6BC48D;
+  --accent:  #FF6A2B;   /* яркий CTA-акцент — только для главного действия */
+  --accent2: #E85A1D;   /* hover CTA */
+  --header-bg:#151B26;  /* графитовый фон хедера */
+  --header-muted:#8CA0BE; /* приглушённый текст на тёмном хедере */
+  --amber:   #E0A32B;   /* важно/предупреждение */
+  --text:    #16202C;   /* основной текст */
+  --muted:   #64748B;   /* вспомогательный */
+  --light:   #3F4A5A;   /* средний */
+  --err:     #E24545;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -50,22 +54,30 @@ body{
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .header{
-  background:var(--terra2);
+  background:var(--header-bg);
   display:flex;align-items:center;
   padding:0 24px;height:56px;gap:16px;flex-shrink:0;
-  box-shadow:0 2px 12px rgba(44,30,16,.25);
+  box-shadow:0 2px 12px rgba(0,0,0,.35);
+  border-bottom:2px solid var(--accent);
 }
 .logo{
   font-family:'Montserrat',sans-serif;
   font-size:20px;font-weight:700;
   color:#fff;letter-spacing:.5px;
+  display:flex;align-items:center;gap:8px;
+}
+.logo::before{
+  content:"";
+  width:9px;height:9px;border-radius:2px;
+  background:var(--accent);
+  box-shadow:0 0 8px rgba(255,106,43,.7);
 }
 .badge{
-  background:rgba(255,255,255,.2);
+  background:var(--accent);
   color:#fff;
   padding:2px 10px;border-radius:20px;
   font-size:11px;font-weight:600;
-  border:1px solid rgba(255,255,255,.35);
+  border:1px solid rgba(255,255,255,.2);
 }
 .header-sub{
   font-size:14px;color:#fff;
@@ -167,7 +179,15 @@ body{
   border-color:var(--terra);
   background:rgba(196,98,45,.05);
 }
-.upload-zone .icon{font-size:34px;margin-bottom:10px;line-height:1}
+.upload-zone .icon{
+  margin-bottom:10px;color:var(--terra);
+  display:flex;justify-content:center;
+  transition:transform .2s,color .2s;
+}
+.upload-zone:hover .icon,.upload-zone.drag .icon{
+  transform:translateY(-3px) scale(1.08);
+  color:var(--accent);
+}
 .upload-zone p{color:var(--muted);font-size:12px;margin-top:4px}
 .upload-zone strong{
   color:var(--text);display:block;
@@ -193,7 +213,7 @@ label{
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn{
-  background:var(--terra);color:#fff;
+  background:var(--accent);color:#fff;
   border:none;padding:10px 20px;
   border-radius:8px;cursor:pointer;
   font-size:13px;font-weight:600;
@@ -201,9 +221,9 @@ label{
   display:flex;align-items:center;gap:7px;
   font-family:'Montserrat',sans-serif;
   letter-spacing:.2px;
-  box-shadow:0 2px 8px rgba(196,98,45,.3);
+  box-shadow:0 2px 8px rgba(255,106,43,.35);
 }
-.btn:hover{background:var(--terra2);box-shadow:0 4px 12px rgba(196,98,45,.4)}
+.btn:hover{background:var(--accent2);box-shadow:0 4px 12px rgba(255,106,43,.45)}
 .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 .btn-green{background:var(--olive);box-shadow:0 2px 8px rgba(122,140,92,.3)}
 .btn-green:hover{background:#687A4E;box-shadow:0 4px 12px rgba(122,140,92,.4)}
@@ -224,9 +244,14 @@ label{
   background:var(--sand);
   border-radius:10px;padding:12px 14px;
   border:1px solid var(--sand3);
+  border-left:3px solid var(--sand3);
 }
-.stat-val{font-size:24px;font-weight:700;line-height:1;font-family:'Montserrat',sans-serif}
-.stat-lbl{font-size:10px;color:var(--muted);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.stat-val{font-size:30px;font-weight:700;line-height:1;font-family:'Montserrat',sans-serif}
+.stat-lbl{font-size:10px;color:var(--muted);margin-top:5px;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.stat.crit{border-left-color:var(--err)}
+.stat.imp {border-left-color:var(--amber)}
+.stat.ok  {border-left-color:var(--olive)}
+.stat.info{border-left-color:var(--terra)}
 .stat.crit .stat-val{color:var(--err)}
 .stat.imp  .stat-val{color:var(--amber)}
 .stat.ok   .stat-val{color:var(--olive)}
@@ -236,11 +261,15 @@ label{
 .approval-item{
   background:#fff;
   border:1px solid var(--sand3);
-  border-radius:10px;padding:11px 14px;
+  border-left:3px solid var(--sand3);
+  border-radius:10px;padding:11px 14px 11px 12px;
   margin-bottom:8px;cursor:pointer;
   transition:all .15s;
-  box-shadow:0 1px 3px rgba(44,30,16,.05);
+  box-shadow:0 1px 3px rgba(20,30,45,.05);
 }
+.approval-item.pri-critical{border-left-color:var(--err)}
+.approval-item.pri-important{border-left-color:var(--amber)}
+.approval-item.pri-recommended{border-left-color:var(--olive)}
 .approval-item:hover{border-color:var(--terra-l);box-shadow:0 2px 8px rgba(196,98,45,.1)}
 .approval-item.selected{
   border-color:var(--terra);
@@ -347,11 +376,11 @@ label{
 <script>
 /* Переопределяем CSS-переменные для компонентов React, использующих inline-цвета */
 window.THEME = {
-  routeColor:   "#C4622D",
-  markerFill:   "#C4622D",
-  critColor:    "#B03A2E",
-  warnColor:    "#C9912A",
-  infoColor:    "#7A8C5C",
+  routeColor:   "#FF6A2B",
+  markerFill:   "#FF6A2B",
+  critColor:    "#E24545",
+  warnColor:    "#E0A32B",
+  infoColor:    "#1F5FBF",
 };
 </script>
 <script src="/static/app.js"></script>

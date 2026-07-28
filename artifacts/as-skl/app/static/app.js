@@ -60,10 +60,16 @@ const PRI_LABELS = { critical: "\u25CF \u041A\u0440\u0438\u0442\u0438\u0447\u043
 const PRI_CLASS = { critical: "priority-critical", important: "priority-important", recommended: "priority-recommended" };
 const OWN_COLORS = { private: "#F9F1DC", municipal: "#E8F0E0", federal: "#EDE8D8", state: "#EDE8D8" };
 const OWN_LABELS = { private: "\u0427\u0430\u0441\u0442\u043D\u0430\u044F", municipal: "\u041C\u0443\u043D\u0438\u0446\u0438\u043F\u0430\u043B\u044C\u043D\u0430\u044F", federal: "\u0413\u043E\u0441. (\u0444\u0435\u0434\u0435\u0440.)", state: "\u0413\u043E\u0441. (\u0440\u0435\u0433\u0438\u043E\u043D.)" };
-const SEV_COLORS = { critical: "#B03A2E", warning: "#C9912A", info: "#7A8C5C" };
+const SEV_COLORS = { critical: "#E24545", warning: "#E0A32B", info: "#1F5FBF" };
+const ALERT_ICONS = {
+  info: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4.5"/><path d="M12 8h.01"/></svg>',
+  ok: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  err: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>'
+};
 function Alert({ type = "info", children }) {
-  const icon = { info: "\u2139", ok: "\u2713", err: "\u2717", warn: "\u26A0" }[type] || "\u2139";
-  return /* @__PURE__ */ React.createElement("div", { className: `alert alert-${type}` }, /* @__PURE__ */ React.createElement("span", null, icon), /* @__PURE__ */ React.createElement("span", null, children));
+  const icon = ALERT_ICONS[type] || ALERT_ICONS.info;
+  return /* @__PURE__ */ React.createElement("div", { className: `alert alert-${type}` }, /* @__PURE__ */ React.createElement("span", { style: { display: "flex", flexShrink: 0 }, dangerouslySetInnerHTML: { __html: icon } }), /* @__PURE__ */ React.createElement("span", null, children));
 }
 function Spin() {
   return /* @__PURE__ */ React.createElement("span", { className: "spin" });
@@ -89,13 +95,13 @@ function MapView({ route, parcels, intersections, onParcelClick }) {
     const pts = route.filter((p) => p.lat && p.lon).map((p) => [p.lat, p.lon]);
     if (!pts.length) return;
     const grp = L.layerGroup();
-    L.polyline(pts, { color: (window.THEME||{}).routeColor||"#C4622D", weight: 3, opacity: 0.9 }).addTo(grp);
+    L.polyline(pts, { color: (window.THEME||{}).routeColor||"#FF6A2B", weight: 3, opacity: 0.9 }).addTo(grp);
     pts.forEach((pt, i) => {
       const p = route[i];
       const isEnd = i === 0 || i === pts.length - 1;
       const circle = L.circleMarker(pt, {
         radius: isEnd ? 7 : 4,
-        fillColor: (window.THEME||{}).markerFill||"#C4622D",
+        fillColor: (window.THEME||{}).markerFill||"#FF6A2B",
         color: "white",
         weight: 1.5,
         fillOpacity: 1
@@ -268,7 +274,7 @@ function UploadTab({ onUploaded }) {
         if (f) handleFile(f);
       }
     },
-    /* @__PURE__ */ React.createElement("div", { className: "icon" }, "\u{1F4C1}"),
+    /* @__PURE__ */ React.createElement("div", { className: "icon", dangerouslySetInnerHTML: { __html: '<svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>' } }),
     /* @__PURE__ */ React.createElement("strong", null, "\u041F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0444\u0430\u0439\u043B \u0438\u043B\u0438 \u043A\u043B\u0438\u043A\u043D\u0438\u0442\u0435"),
     /* @__PURE__ */ React.createElement("p", null, "DXF / DWG (AutoCAD) \xB7 CSV \u0441 \u043A\u043E\u043E\u0440\u0434\u0438\u043D\u0430\u0442\u0430\u043C\u0438"),
     /* @__PURE__ */ React.createElement(
@@ -348,7 +354,7 @@ function ApprovalsTab({ project, cadResult, onGenerate }) {
       "div",
       {
         key: a.id,
-        className: `approval-item${selected.has(a.id) ? " selected" : ""}`,
+        className: `approval-item pri-${a.priority}${selected.has(a.id) ? " selected" : ""}`,
         onClick: () => toggleSel(a.id)
       },
       /* @__PURE__ */ React.createElement("div", { className: "ai-header" }, /* @__PURE__ */ React.createElement("span", { className: `priority-badge ${PRI_CLASS[a.priority] || ""}` }, PRI_LABELS[a.priority] || a.priority), /* @__PURE__ */ React.createElement("span", { className: "ai-name" }, a.instance_name), /* @__PURE__ */ React.createElement("span", { className: "ai-basis" }, a.legal_basis)),
@@ -411,7 +417,7 @@ function App() {
     { key: "analyze", label: "2 \u0410\u043D\u0430\u043B\u0438\u0437" },
     { key: "approvals", label: "3 \u0421\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D\u0438\u044F" }
   ];
-  return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement("div", { className: "header" }, /* @__PURE__ */ React.createElement("span", { className: "logo" }, "\u0410\u0421 \u0421\u041A\u041B"), /* @__PURE__ */ React.createElement("span", { className: "badge" }, "v2.0"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--muted)", fontSize: 13 } }, "\u0421\u0438\u0441\u0442\u0435\u043C\u0430 \u0441\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D\u0438\u044F \u043A\u0430\u0431\u0435\u043B\u044C\u043D\u044B\u0445 \u043B\u0438\u043D\u0438\u0439 \xB7 \u041E\u041E\u041E \xAB\u042D\u043B\u0435\u043A\u0442\u0440\u043E\u043C\u043E\u043D\u0442\u0430\u0436-110\xBB"), /* @__PURE__ */ React.createElement("div", { className: "header-right" }, project && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "var(--light)" } }, "\u{1F4CB} ", project.project_name), genResult && /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement("div", { className: "header" }, /* @__PURE__ */ React.createElement("span", { className: "logo" }, "\u0410\u0421 \u0421\u041A\u041B"), /* @__PURE__ */ React.createElement("span", { className: "badge" }, "v2.0"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--header-muted)", fontSize: 13 } }, "\u0421\u0438\u0441\u0442\u0435\u043C\u0430 \u0441\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D\u0438\u044F \u043A\u0430\u0431\u0435\u043B\u044C\u043D\u044B\u0445 \u043B\u0438\u043D\u0438\u0439 \xB7 \u041E\u041E\u041E \xAB\u042D\u043B\u0435\u043A\u0442\u0440\u043E\u043C\u043E\u043D\u0442\u0430\u0436-110\xBB"), /* @__PURE__ */ React.createElement("div", { className: "header-right" }, project && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "var(--header-muted)" } }, "\u{1F4CB} ", project.project_name), genResult && /* @__PURE__ */ React.createElement(
     "a",
     {
       href: genResult.download_url,
