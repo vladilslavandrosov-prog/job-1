@@ -357,6 +357,82 @@ class PKKClient:
                 if poly:
                     p.polygon = poly
 
+    OKS_KEYWORDS = {
+        "gas":      ("газ", "нефт"),
+        "railway":  ("железн", "жд "),
+        "telecom":  ("связ", "волс", "кабель связи"),
+        "heritage": ("наследи", "памятник", "культурн"),
+    }
+    OKS_CATEGORY_LABELS = {
+        "gas":      "Охранная зона газопровода",
+        "railway":  "Полоса отвода железной дороги",
+        "telecom":  "Полоса отвода линии связи",
+        "heritage": "Зона охраны объекта культурного наследия",
+    }
+
+    def get_oks_by_bbox(self, bbox: dict, limit: int = 100) -> List[CadastralParcel]:
+        """
+        Запрашивает объекты капстроительства (слой OKS) в bbox — линейная
+        инфраструктура (газ/жд/связь) и зоны охраны наследия. Официальной
+        схемы атрибутов у неофициального API нет, поэтому тип объекта
+        определяется эвристически по ключевым словам в названии/адресе;
+        обычные здания и сооружения (не из списка ключевых слов) пропускаются.
+        Best-effort: любая ошибка просто возвращает пустой список, не
+        прерывая основной анализ по земельным участкам.
+        """
+        objects = []
+        bbox_str = (f"{bbox['min_lon']},{bbox['min_lat']},"
+                    f"{bbox['max_lon']},{bbox['max_lat']}")
+        try:
+            url = self.FEATURES_URL.format(layer=self.LAYER_OKS)
+            params = {
+                "text": "", "bbox": bbox_str,
+                "limit": min(limit, 40), "skip": 0, "inBbox": "true",
+            }
+            resp = self.session.get(url, params=params, timeout=self.timeout)
+            self._call_count += 1
+            if resp.status_code == 200:
+                for feat in resp.json().get("features", []):
+                    obj = self._parse_oks_feature(feat)
+                    if obj:
+                        objects.append(obj)
+        except requests.exceptions.ConnectionError:
+            logger.warning("PKK OKS API недоступен")
+        except Exception as e:
+            logger.warning(f"PKK OKS API error: {e}")
+        return objects
+
+    def _parse_oks_feature(self, feat: dict) -> Optional[CadastralParcel]:
+        attrs = feat.get("attrs", {})
+        cn = attrs.get("cn", feat.get("id", ""))
+        if not cn:
+            return None
+
+        text = " ".join(str(attrs.get(k, "")) for k in
+                         ("name", "address", "purpose", "oks_type")).lower()
+        obj_type = next(
+            (t for t, kws in self.OKS_KEYWORDS.items() if any(kw in text for kw in kws)),
+            None,
+        )
+        if not obj_type:
+            return None  # обычное здание/сооружение — не в нашем профиле
+
+        geom = feat.get("geometry") or feat.get("extent")
+        polygon = self._extract_polygon(geom) if geom else []
+        if not polygon:
+            return None
+
+        return CadastralParcel(
+            cn=cn,
+            area=float(attrs.get("area_value", 0) or 0),
+            category=self.OKS_CATEGORY_LABELS[obj_type],
+            owner_type=self.OWNER_TYPE_MAP.get(str(attrs.get("areatype", "1")), "federal"),
+            owner_name=attrs.get("name", "") or attrs.get("right_reg", ""),
+            address=attrs.get("address", ""),
+            polygon=polygon,
+            raw=attrs,
+        )
+
     def get_parcel_details(self, cn: str) -> Optional[dict]:
         """Детальная информация по кадастровому номеру."""
         try:
@@ -478,9 +554,9 @@ def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
     # Горизонтальный раздел
     my = B + H * 0.52   # граница нижней/верхней строки
 
-    def irregular(corners: List[Tuple[float,float]], seed: int, n_mid: int = 3) -> List[Tuple[float,float]]:
+    def irregular(corners: List[Tuple[float,float]], seed: int, n_mid: int = 1) -> List[Tuple[float,float]]:
         """Принимает список углов (без замыкания), добавляет n_mid промежуточных
-        точек на каждое ребро со случайным смещением вдоль нормали.
+        точек на КАЖДОЕ второе ребро с единственным гладким изгибом (не пилой).
         Углы НЕ смещаются — участки стыкуются без зазоров.
         """
         rng = random.Random(seed)
@@ -493,12 +569,14 @@ def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
             ex = p2[0] - p1[0];  ey = p2[1] - p1[1]
             seg_len = math.hypot(ex, ey) or 1.0
             nx = -ey / seg_len;  ny = ex / seg_len
-            jitter = seg_len * 0.07   # 7% длины ребра
-            for k in range(1, n_mid + 1):
-                t = k / (n_mid + 1)
-                mx_ = p1[0] + ex * t + nx * rng.uniform(-jitter, jitter)
-                my_ = p1[1] + ey * t + ny * rng.uniform(-jitter, jitter)
-                ring.append((mx_, my_))
+            jitter = seg_len * 0.035   # 3.5% длины ребра — лёгкий изгиб, не пила
+            # Не каждое ребро гнём — часть остаётся прямой, как у настоящих участков
+            if rng.random() < 0.6:
+                for k in range(1, n_mid + 1):
+                    t = k / (n_mid + 1)
+                    mx_ = p1[0] + ex * t + nx * rng.uniform(-jitter, jitter)
+                    my_ = p1[1] + ey * t + ny * rng.uniform(-jitter, jitter)
+                    ring.append((mx_, my_))
         ring.append(corners[0])   # замыкание
         return ring
 
@@ -522,12 +600,45 @@ def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
 
     parcels = []
     for corners, seed, cat, owner_type, area, cn, owner_name in cells:
-        poly = irregular(corners, seed=seed, n_mid=4)
+        poly = irregular(corners, seed=seed)
         parcels.append(CadastralParcel(
             cn=cn, area=area, category=cat,
             owner_type=owner_type, owner_name=owner_name,
             polygon=poly,
         ))
+
+    # Линейные объекты капстроительства (слой OKS в реальном API) — они
+    # накладываются на земельные участки, а не делят территорию наравне
+    # с ними, поэтому заданы отдельно, полосами через весь bbox.
+    def band(y_frac, th_frac, seed, cat, owner_type, area, cn, owner_name):
+        y0 = B + H * y_frac - H * th_frac / 2
+        y1 = B + H * y_frac + H * th_frac / 2
+        corners = [(L, y0), (R, y0), (R, y1), (L, y1)]
+        return CadastralParcel(
+            cn=cn, area=area, category=cat, owner_type=owner_type,
+            owner_name=owner_name, polygon=irregular(corners, seed=seed),
+        )
+
+    parcels.append(band(0.14, 0.035, 11, "Охранная зона газопровода высокого давления",
+                         "federal", 8000, "46:12:0099001:01", "ООО «Газпром трансгаз Москва»"))
+    parcels.append(band(0.40, 0.025, 12, "Полоса отвода линии связи (ВОЛС)",
+                         "private", 3000, "46:12:0099002:02", "ПАО «Ростелеком»"))
+    parcels.append(band(0.90, 0.045, 13, "Полоса отвода железной дороги",
+                         "federal", 15000, "46:12:0099003:03", "РЖД (региональный филиал)"))
+
+    heritage_corners = [
+        (x1 + (x2 - x1) * 0.35, my - H * 0.08),
+        (x1 + (x2 - x1) * 0.65, my - H * 0.08),
+        (x1 + (x2 - x1) * 0.65, my + H * 0.08),
+        (x1 + (x2 - x1) * 0.35, my + H * 0.08),
+    ]
+    parcels.append(CadastralParcel(
+        cn="46:12:0099004:04", area=1200,
+        category="Зона охраны объекта культурного наследия",
+        owner_type="municipal", owner_name="Администрация района (охранная зона ОКН)",
+        polygon=irregular(heritage_corners, seed=14),
+    ))
+
     return parcels
 
 
@@ -580,6 +691,11 @@ class CadastralAnalyzer:
                 result.data_source = "demo_fallback"
             else:
                 result.data_source = "pkk_live"
+                # Линейная инфраструктура (газ/жд/связь/наследие) — отдельный
+                # слой OKS, best-effort: сбой запроса не должен ронять анализ.
+                oks_objects = self.pkk.get_oks_by_bbox(bbox)
+                result.api_calls_made = self.pkk._call_count
+                parcels += oks_objects
 
         result.parcels = parcels
 
@@ -674,6 +790,17 @@ class CadastralAnalyzer:
         name = (parcel.owner_name or "").lower()
         cn = parcel.cn.lower()
 
+        # Линейные/точечные объекты капстроительства (слой OKS) —
+        # определяются по ключевым словам в названии/охранной зоне
+        if "газ" in cat or "нефт" in cat:
+            return "gas"
+        if "железн" in cat:
+            return "railway"
+        if "связ" in cat or "волс" in cat:
+            return "telecom"
+        if "наследи" in cat or "культурн" in cat:
+            return "heritage"
+
         if "транспорт" in cat or "росавтодор" in name or "автодор" in name:
             return "federal_road"
         if "лесн" in cat:
@@ -701,6 +828,7 @@ class CadastralAnalyzer:
             "telecom":    ["Профиль пересечения"],
             "federal_road": ["Продольный профиль", "Выписка кабельного журнала", "ГИБДД ордер"],
             "railway":    ["Профиль пересечения", "Технические условия РЖД"],
+            "heritage":   ["Заключение органа охраны объектов культурного наследия"],
             "private_land": ["Выписка из ЕГРН на участок"],
             "federal_land": ["Выписка из ЕГРН на участок"],
             "municipal_land": ["Выписка из ЕГРН на участок"],
