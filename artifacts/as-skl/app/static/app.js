@@ -434,6 +434,16 @@ function App() {
       className: "btn btn-green btn-sm"
     },
     "\u2B07 \u0421\u043A\u0430\u0447\u0430\u0442\u044C PDF"
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "btn btn-ghost btn-sm",
+      style: { color: "var(--header-muted)", borderColor: "rgba(255,255,255,.2)" },
+      onClick: () => {
+        fetch("/logout", { method: "POST" }).finally(() => { window.location.href = "/login"; });
+      }
+    },
+    "\u0412\u044B\u0439\u0442\u0438"
   ), /* @__PURE__ */ React.createElement("span", { className: "status-dot" }))), /* @__PURE__ */ React.createElement("div", { className: "main" }, /* @__PURE__ */ React.createElement("div", { className: "sidebar" }, /* @__PURE__ */ React.createElement("div", { className: "sidebar-tabs" }, TABS.map((t) => /* @__PURE__ */ React.createElement(
     "div",
     {

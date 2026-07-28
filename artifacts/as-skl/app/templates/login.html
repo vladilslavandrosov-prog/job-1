@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вход — АС СКЛ v2.0</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --terra:   #1F5FBF;
+  --terra2:  #164A96;
+  --sand:    #F4F7FB;
+  --sand3:   #DCE3ED;
+  --cream:   #FFFFFF;
+  --accent:  #FF6A2B;
+  --accent2: #E85A1D;
+  --header-bg:#151B26;
+  --text:    #16202C;
+  --muted:   #64748B;
+  --err:     #E24545;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--header-bg);
+  color:var(--text);
+  min-height:100vh;
+  display:flex;align-items:center;justify-content:center;
+  background-image:radial-gradient(circle at 20% 20%, rgba(31,95,191,.25), transparent 45%),
+                    radial-gradient(circle at 80% 80%, rgba(255,106,43,.12), transparent 45%);
+}
+.card{
+  background:var(--cream);
+  border-radius:16px;
+  padding:36px 34px 30px;
+  width:360px;
+  box-shadow:0 20px 50px rgba(0,0,0,.35);
+}
+.logo{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Montserrat',sans-serif;
+  font-size:20px;font-weight:700;
+  color:var(--text);
+  margin-bottom:4px;
+}
+.logo::before{
+  content:"";
+  width:9px;height:9px;border-radius:2px;
+  background:var(--accent);
+  box-shadow:0 0 8px rgba(255,106,43,.6);
+}
+.subtitle{
+  font-size:12px;color:var(--muted);
+  margin-bottom:26px;
+}
+label{
+  font-size:11px;color:var(--muted);font-weight:500;
+  display:block;margin-bottom:5px;margin-top:16px;
+  text-transform:uppercase;letter-spacing:.5px;
+}
+input{
+  background:var(--sand);
+  border:1px solid var(--sand3);
+  color:var(--text);
+  padding:11px 12px;border-radius:8px;
+  font-size:14px;width:100%;
+  outline:none;transition:border .15s,box-shadow .15s;
+  font-family:'Inter',sans-serif;
+}
+input:focus{border-color:var(--terra);box-shadow:0 0 0 3px rgba(31,95,191,.12)}
+.btn{
+  width:100%;margin-top:24px;
+  background:var(--accent);color:#fff;
+  border:none;padding:12px 20px;
+  border-radius:8px;cursor:pointer;
+  font-size:14px;font-weight:600;
+  font-family:'Montserrat',sans-serif;
+  letter-spacing:.2px;
+  transition:all .15s;
+  box-shadow:0 2px 8px rgba(255,106,43,.35);
+}
+.btn:hover{background:var(--accent2);box-shadow:0 4px 12px rgba(255,106,43,.45)}
+.error{
+  margin-top:18px;padding:10px 12px;border-radius:8px;
+  background:rgba(226,69,69,.08);border:1px solid rgba(226,69,69,.3);
+  color:var(--err);font-size:12.5px;font-weight:500;
+}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">АС СКЛ</div>
+    <div class="subtitle">Система согласования кабельных линий</div>
+    <form method="POST" action="/login">
+      <label for="username">Имя пользователя</label>
+      <input id="username" name="username" type="text" autofocus autocomplete="username" required>
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Войти</button>
+      {% if error %}
+      <div class="error">Неверное имя пользователя или пароль</div>
+      {% endif %}
+    </form>
+  </div>
+</body>
+</html>

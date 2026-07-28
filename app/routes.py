@@ -1,9 +1,12 @@
 """
 АС СКЛ v2.0 — REST API (in-memory backend, без PostgreSQL)
 """
-import os, uuid, json, logging
+import os, uuid, json, logging, hmac
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify, send_file
+from flask import (
+    Blueprint, request, jsonify, send_file,
+    render_template, redirect, url_for, session, current_app,
+)
 from .modules.dwg_parser import parse_from_bytes, RoutePoint
 from .modules.cadastral import CadastralAnalyzer, result_to_dict
 from .modules.pdf_generator import PDFGenerator
@@ -28,6 +31,30 @@ def index():
 
 @main_bp.route("/favicon.ico")
 def favicon(): return "", 204
+
+
+# ── Auth (тестовая, один пользователь) ──────────────────────────────────────
+@main_bp.route("/login", methods=["GET", "POST"])
+def login():
+    error = False
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        valid = hmac.compare_digest(username, current_app.config["AUTH_USERNAME"]) \
+            and hmac.compare_digest(password, current_app.config["AUTH_PASSWORD"])
+        if valid:
+            session.clear()
+            session["authenticated"] = True
+            session.permanent = True
+            return redirect(url_for("main.index"))
+        error = True
+    return render_template("login.html", error=error)
+
+
+@main_bp.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("main.login"))
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
