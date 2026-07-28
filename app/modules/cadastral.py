@@ -321,7 +321,40 @@ class PKKClient:
                 logger.warning(f"PKK API error: {e}")
                 break
 
+        # Обогащение: для участков с bbox-полигоном (4 угла) дозагружаем
+        # детальную геометрию из /api/features/1/{cn} (параллельно).
+        self._enrich_geometries(parcels)
         return parcels
+
+    def _enrich_geometries(self, parcels: List["CadastralParcel"], max_workers: int = 6) -> None:
+        """Параллельно дозагружает детальные полигоны для участков с bbox-only геометрией."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        targets = [p for p in parcels if not p.polygon or len(p.polygon) <= 5]
+        if not targets:
+            return
+
+        def fetch(p: "CadastralParcel"):
+            try:
+                detail = self.get_parcel_details(p.cn)
+                if not detail:
+                    return p, None
+                feat = detail.get("feature", {})
+                geom = feat.get("geometry")
+                poly = self._extract_polygon(geom) if geom else []
+                # Принимаем только если действительно больше 5 точек (не bbox)
+                if poly and len(poly) > 5:
+                    return p, poly
+            except Exception as e:
+                logger.debug(f"enrich {p.cn}: {e}")
+            return p, None
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(fetch, p) for p in targets]
+            for fut in as_completed(futures):
+                p, poly = fut.result()
+                if poly:
+                    p.polygon = poly
 
     def get_parcel_details(self, cn: str) -> Optional[dict]:
         """Детальная информация по кадастровому номеру."""
@@ -362,33 +395,61 @@ class PKKClient:
         )
 
     def _extract_polygon(self, geom: dict) -> List[Tuple[float,float]]:
-        """Извлекает список точек полигона из GeoJSON."""
+        """Извлекает список точек полигона из GeoJSON или extent-bbox."""
+
+        # PKK иногда отдаёт extent-словарь напрямую (без вложения в geometry).
+        # Определяем его по наличию xmin/ymin/xmax/ymax.
+        if all(k in geom for k in ("xmin", "ymin", "xmax", "ymax")):
+            xmin = geom["xmin"]; ymin = geom["ymin"]
+            xmax = geom["xmax"]; ymax = geom["ymax"]
+            # Защита: если координаты выглядят как Web Mercator (>200), конвертируем
+            if abs(xmin) > 180 or abs(ymin) > 90:
+                xmin, ymin = self._merc_to_wgs(xmin, ymin)
+                xmax, ymax = self._merc_to_wgs(xmax, ymax)
+            return [(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)]
+
         gtype = geom.get("type", "")
         coords = geom.get("coordinates", [])
 
         if gtype == "Polygon" and coords:
-            return [(c[0], c[1]) for c in coords[0]]
+            ring = coords[0]
+            pts = [(c[0], c[1]) for c in ring]
+            # Защита от Web Mercator в координатах полигона
+            if pts and (abs(pts[0][0]) > 180 or abs(pts[0][1]) > 90):
+                pts = [self._merc_to_wgs(x, y) for x, y in pts]
+            return pts
         elif gtype == "MultiPolygon" and coords:
-            # Берём самый большой полигон
             rings = [ring for poly in coords for ring in poly]
             longest = max(rings, key=len) if rings else []
-            return [(c[0], c[1]) for c in longest]
+            pts = [(c[0], c[1]) for c in longest]
+            if pts and (abs(pts[0][0]) > 180 or abs(pts[0][1]) > 90):
+                pts = [self._merc_to_wgs(x, y) for x, y in pts]
+            return pts
         elif gtype == "Point" and len(coords) >= 2:
-            # Иногда PKK отдаёт только centroid
             cx, cy = coords[0], coords[1]
-            r = 0.001  # ~100 м — приблизительный bbox точки
+            if abs(cx) > 180 or abs(cy) > 90:
+                cx, cy = self._merc_to_wgs(cx, cy)
+            r = 0.001  # ~100 м в градусах
             return [(cx-r,cy-r),(cx+r,cy-r),(cx+r,cy+r),(cx-r,cy+r)]
 
-        # Fallback: extent
+        # Fallback: extent вложен внутри geom
         if "extent" in geom:
             e = geom["extent"]
-            return [
-                (e.get("xmin",0), e.get("ymin",0)),
-                (e.get("xmax",0), e.get("ymin",0)),
-                (e.get("xmax",0), e.get("ymax",0)),
-                (e.get("xmin",0), e.get("ymax",0)),
-            ]
+            xmin = e.get("xmin", 0); ymin = e.get("ymin", 0)
+            xmax = e.get("xmax", 0); ymax = e.get("ymax", 0)
+            if abs(xmin) > 180 or abs(ymin) > 90:
+                xmin, ymin = self._merc_to_wgs(xmin, ymin)
+                xmax, ymax = self._merc_to_wgs(xmax, ymax)
+            return [(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)]
+
         return []
+
+    @staticmethod
+    def _merc_to_wgs(x: float, y: float) -> Tuple[float, float]:
+        """Конвертирует Web Mercator (EPSG:3857) → WGS-84 (lon, lat)."""
+        lon = x * 180.0 / 20037508.342789244
+        lat = math.degrees(2.0 * math.atan(math.exp(y * math.pi / 20037508.342789244)) - math.pi / 2)
+        return round(lon, 7), round(lat, 7)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -396,42 +457,77 @@ class PKKClient:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _make_demo_parcels(bbox: dict) -> List[CadastralParcel]:
-    """Генерирует реалистичные тестовые кадастровые участки для демо-режима."""
-    cx = (bbox["min_lon"] + bbox["max_lon"]) / 2
-    cy = (bbox["min_lat"] + bbox["max_lat"]) / 2
-    dx = (bbox["max_lon"] - bbox["min_lon"]) / 5
-    dy = (bbox["max_lat"] - bbox["min_lat"]) / 4
+    """Генерирует реалистичные тестовые кадастровые участки для демо-режима.
 
-    def rect(lon0, lat0, w, h):
-        return [(lon0,lat0),(lon0+w,lat0),(lon0+w,lat0+h),(lon0,lat0+h)]
+    Сетка 3×2 ячеек + вертикальная дорожная полоса — покрывают весь bbox
+    без пропусков. Углы участков фиксированы на узлах сетки (без jitter),
+    только средние точки рёбер смещаются — так соседние участки стыкуются.
+    """
+    import random
 
-    return [
-        CadastralParcel(
-            cn="77:01:0001023:44", area=14900, category="Земли нас. пунктов",
-            owner_type="municipal", owner_name="г. Москва",
-            polygon=rect(bbox["min_lon"], cy, dx*1.5, dy*1.2),
-        ),
-        CadastralParcel(
-            cn="77:01:0001024:12", area=34000, category="Земли нас. пунктов",
-            owner_type="private", owner_name="Иванов А.П.",
-            polygon=rect(bbox["min_lon"]+dx*1.5, cy-dy*0.5, dx*1.2, dy*1.8),
-        ),
-        CadastralParcel(
-            cn="77:01:0001025:07", area=122000, category="Земли транспорта",
-            owner_type="federal", owner_name="РФ (Росавтодор)",
-            polygon=rect(bbox["min_lon"]+dx*2.8, bbox["min_lat"], dx*0.4, dy*4),
-        ),
-        CadastralParcel(
-            cn="77:01:0001025:08", area=95000, category="Земли нас. пунктов",
-            owner_type="federal", owner_name="РФ (Росимущество)",
-            polygon=rect(bbox["min_lon"]+dx*3.3, cy-dy, dx*1.0, dy*2),
-        ),
-        CadastralParcel(
-            cn="77:01:0001026:01", area=18000, category="Земли нас. пунктов",
-            owner_type="municipal", owner_name="г. Москва",
-            polygon=rect(bbox["min_lon"]+dx*4.4, cy, dx*0.55, dy*1.0),
-        ),
+    L = bbox["min_lon"];  R = bbox["max_lon"]
+    B = bbox["min_lat"];  T = bbox["max_lat"]
+    W = R - L;  H = T - B
+
+    # Опорные вертикальные разделы (доля от W)
+    x1 = L + W * 0.28   # граница ячеек col-0 / col-1
+    x2 = L + W * 0.53   # левый край дороги
+    x2r = L + W * 0.60  # правый край дороги
+    x3 = L + W * 0.78   # граница ячеек col-2 / col-3 (правая зона)
+    # Горизонтальный раздел
+    my = B + H * 0.52   # граница нижней/верхней строки
+
+    def irregular(corners: List[Tuple[float,float]], seed: int, n_mid: int = 3) -> List[Tuple[float,float]]:
+        """Принимает список углов (без замыкания), добавляет n_mid промежуточных
+        точек на каждое ребро со случайным смещением вдоль нормали.
+        Углы НЕ смещаются — участки стыкуются без зазоров.
+        """
+        rng = random.Random(seed)
+        ring: List[Tuple[float,float]] = []
+        n = len(corners)
+        for i in range(n):
+            p1 = corners[i]
+            p2 = corners[(i + 1) % n]
+            ring.append(p1)
+            ex = p2[0] - p1[0];  ey = p2[1] - p1[1]
+            seg_len = math.hypot(ex, ey) or 1.0
+            nx = -ey / seg_len;  ny = ex / seg_len
+            jitter = seg_len * 0.07   # 7% длины ребра
+            for k in range(1, n_mid + 1):
+                t = k / (n_mid + 1)
+                mx_ = p1[0] + ex * t + nx * rng.uniform(-jitter, jitter)
+                my_ = p1[1] + ey * t + ny * rng.uniform(-jitter, jitter)
+                ring.append((mx_, my_))
+        ring.append(corners[0])   # замыкание
+        return ring
+
+    # Сетка: 6 ячеек + дорога
+    # Левый столбец (col-0): x=[L, x1], row-bottom=[B,my], row-top=[my,T]
+    # Средний столбец (col-1): x=[x1, x2], полная высота (one tall cell + road)
+    # Дорога: x=[x2, x2r], вертикальная полоса
+    # Правый столбец (col-2 + col-3): x=[x2r, x3] и [x3, R], row-bottom + top
+
+    cells = [
+        # (corners, seed, категория, тип, площадь, кн, владелец)
+        ([(L, B),(x1,B),(x1,my),(L,my)],    1, "Земли лесного фонда",    "federal",   87000, "46:12:0010301:15", "РФ (Рослесхоз)"),
+        ([(L, my),(x1,my),(x1,T),(L,T)],     2, "Земли с/х назначения",  "private",   54000, "46:12:0010301:22", "Сельхоз-Агро ООО"),
+        ([(x1, B),(x2,B),(x2,T),(x1,T)],     3, "Земли нас. пунктов",    "municipal", 43000, "46:12:0010302:08", "Пристенский р-н"),
+        ([(x2,  B),(x2r,B),(x2r,T),(x2,T)],  4, "Земли транспорта",      "federal",  128000, "46:12:0010303:01", "РФ (Росавтодор)"),
+        ([(x2r, B),(x3,B),(x3,my),(x2r,my)], 5, "Земли нас. пунктов",    "private",   32000, "46:12:0010304:11", "Петров В.С."),
+        ([(x2r,my),(x3,my),(x3,T),(x2r,T)],  6, "Земли с/х назначения",  "municipal", 28000, "46:12:0010304:17", "Пристенский р-н"),
+        ([(x3,  B),(R,B),(R,my),(x3,my)],     7, "Земли нас. пунктов",    "private",   19000, "46:12:0010305:03", "Сидорова Е.В."),
+        ([(x3, my),(R,my),(R,T),(x3,T)],      8, "Земли лесного фонда",   "federal",   61000, "46:12:0010305:09", "РФ (Рослесхоз)"),
     ]
+
+    parcels = []
+    for corners, seed, cat, owner_type, area, cn, owner_name in cells:
+        poly = irregular(corners, seed=seed, n_mid=4)
+        parcels.append(CadastralParcel(
+            cn=cn, area=area, category=cat,
+            owner_type=owner_type, owner_name=owner_name,
+            polygon=poly,
+        ))
+    return parcels
 
 
 # ──────────────────────────────────────────────────────────────────────────────

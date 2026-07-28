@@ -2,8 +2,8 @@
 # АС СКЛ v2.0 — Деплой на GitHub
 set -e
 
-TOKEN="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"
-REPO="https://${TOKEN}@github.com/vladilslavandrosov-prog/job-1.git"
+: "${GITHUB_TOKEN:?Set GITHUB_TOKEN before running this script}"
+REPO="https://${GITHUB_TOKEN}@github.com/vladilslavandrosov-prog/job-1.git"
 
 echo "=== АС СКЛ v2.0 → GitHub ==="
 echo "Репозиторий: https://github.com/vladilslavandrosov-prog/job-1"
