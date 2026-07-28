@@ -79,6 +79,7 @@ class CadastralResult:
     warnings: List[str] = field(default_factory=list)
     api_calls_made: int = 0
     processing_time_s: float = 0.0
+    data_source: str = "unknown"  # demo / demo_fallback / pkk_live
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -566,6 +567,7 @@ class CadastralAnalyzer:
         if demo_mode:
             parcels = _make_demo_parcels(bbox)
             result.warnings.append("Используются демо-данные (PKK API отключён)")
+            result.data_source = "demo"
         else:
             parcels = self.pkk.get_parcels_by_bbox(bbox)
             result.api_calls_made = self.pkk._call_count
@@ -575,6 +577,9 @@ class CadastralAnalyzer:
                     "Переключаюсь на демо-данные."
                 )
                 parcels = _make_demo_parcels(bbox)
+                result.data_source = "demo_fallback"
+            else:
+                result.data_source = "pkk_live"
 
         result.parcels = parcels
 
@@ -753,6 +758,7 @@ def result_to_dict(result: CadastralResult) -> dict:
             "important_approvals": sum(1 for a in result.approvals if a.priority == "important"),
             "critical_path_days": result.critical_path_days,
             "processing_time_s": result.processing_time_s,
+            "data_source": result.data_source,
         },
         "errors": result.errors,
         "warnings": result.warnings,
