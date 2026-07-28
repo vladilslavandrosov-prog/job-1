@@ -389,8 +389,8 @@ class PDFGenerator:
         # Сводка
         critical = sum(1 for a in approvals if a["priority"]=="critical")
         important = sum(1 for a in approvals if a["priority"]=="important")
-        days = max((a["review_days"] or 0) for a in approvals
-                   if a["priority"]=="critical") if approvals else 0
+        days = max(((a["review_days"] or 0) for a in approvals
+                    if a["priority"]=="critical"), default=0)
         stats = [
             [_th("Всего"), _th("Критично"), _th("Важно"), _th("Критич. путь")],
             [_td(str(len(approvals)),False), _td(str(critical),False),

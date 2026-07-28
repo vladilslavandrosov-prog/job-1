@@ -23,7 +23,7 @@ def index():
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         "Pragma": "no-cache",
-        "X-Frame-Options": "ALLOWALL",
+        "X-Frame-Options": "SAMEORIGIN",
     }
 
 @main_bp.route("/favicon.ico")
@@ -51,7 +51,7 @@ def upload():
         if not f.filename:
             return jsonify({"error": "Файл не выбран"}), 400
         ext = f.filename.rsplit(".", 1)[-1].lower()
-        allowed = {"dwg", "dxf", "pdf", "csv", "xlsx"}
+        allowed = {"dwg", "dxf", "csv"}  # парсер (dwg_parser.py) поддерживает только эти форматы
         if ext not in allowed:
             return jsonify({"error": f"Формат .{ext} не поддерживается"}), 400
         data = f.read()
@@ -164,7 +164,11 @@ def generate(pid):
     approval_ids = body.get("approval_ids", None)
 
     gen = PDFGenerator()
-    pdf_path = gen.generate_package(project, approval_ids=approval_ids)
+    try:
+        pdf_path = gen.generate_package(project, approval_ids=approval_ids)
+    except Exception:
+        logger.exception(f"PDF generation failed for project {pid}")
+        return jsonify({"error": "Не удалось сформировать PDF-пакет"}), 500
 
     project_update(pid, status="generated", pdf_path=pdf_path)
 

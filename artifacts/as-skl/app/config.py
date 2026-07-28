@@ -6,7 +6,13 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "as-skl-dev-secret-2025")
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB upload limit
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "..", "data", "uploads")
-    ALLOWED_EXTENSIONS = {"dwg", "dxf", "pdf", "xlsx", "xls", "csv"}
+    ALLOWED_EXTENSIONS = {"dwg", "dxf", "csv"}
+
+    # Тестовая авторизация (HTTP Basic, один пользователь).
+    # Задайте AUTH_USERNAME/AUTH_PASSWORD в переменных окружения для показа —
+    # значения по умолчанию годятся только для локальной разработки.
+    AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "demo")
+    AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "demo2026")
 
     # Кадастровый API Росреестра (PKK)
     PKK_API_BASE = "https://pkk.rosreestr.ru/api"
